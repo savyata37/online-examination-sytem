@@ -1,0 +1,312 @@
+Next Steps to Verify Everything Works
+
+Now that the server is running, let’s test step by step:
+
+1️⃣ Test Auth (Register/Login)
+Register a student
+
+POST http://localhost:5000/api/auth/register
+
+Body (JSON):
+
+{
+  "full_name": "John Doe",
+  "email": "student1@test.com",
+  "password": "123456",
+  "role": "student"
+}
+
+
+✅ Should return:
+
+{
+  "message": "User registered successfully",
+  "user": { "id": 1, "email": "student1@test.com", "role": "student" }
+}
+
+Login
+
+POST http://localhost:5000/api/auth/login
+
+Body:
+
+{
+  "email": "student1@test.com",
+  "password": "123456"
+}
+
+
+✅ Should return a JWT token:
+
+{
+  "token": "<JWT_TOKEN>",
+  "role": "student",
+  "name": "John Doe"
+}
+
+
+{
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NCwicm9sZSI6InN0dWRlbnQiLCJpYXQiOjE3Njk5NzczMjUsImV4cCI6MTc3MDA2MzcyNX0.mzqfJLXWjWCYJboStNMSMmfsxtn-NuCgc-Ta8p06zfE",
+    "role": "student",
+    "name": "John Doe"
+}
+
+
+
+
+
+{  "full_name": "Jonny Doe",
+  "email": "teacher1@test.com",
+  "password": "abcdef",
+  "role": "teacher"
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NSwicm9sZSI6InRlYWNoZXIiLCJpYXQiOjE3Njk5Nzc4NzksImV4cCI6MTc3MDA2NDI3OX0.HmNJl_Y9Qwy54A_1RaLbR4a7o8ulHunvLffMXsElVtI",
+    "role": "teacher",
+    "name": "Jonny Doe"
+}
+
+Save the token for authenticated requests.
+
+2️⃣ Create Exam (Teacher/Admin)
+
+POST http://localhost:5000/api/exams/
+
+Headers:
+
+Authorization: Bearer <JWT_TOKEN_OF_TEACHER_OR_ADMIN>
+
+
+Body:
+
+{
+  "title": "Math Test",
+  "description": "Algebra & Geometry",
+  "duration": 60
+}
+
+
+✅ Response should return the created exam object.
+
+3️⃣ Start Exam (Student)
+
+POST http://localhost:5000/api/student/start
+
+Headers:
+
+token: <JWT_TOKEN_OF_STUDENT>
+
+
+Body:
+
+{
+  "exam_id": 1
+}
+
+
+✅ Response:
+
+{
+  "message": "Exam started",
+  "started_at": "2026-02-02TXX:XX:XXZ",
+  "duration_minutes": 60
+}
+
+4️⃣ Submit Exam
+
+POST http://localhost:5000/api/student/submit
+
+Body:
+
+{
+  "exam_id": 1,
+  "answers": {
+    "1": "A",
+    "2": "C",
+    "3": "B"
+  }
+}
+
+
+✅ Should return:
+
+{
+  "message": "Exam submitted successfully",
+  "score": 3,
+  "percentage": 100,
+  "passed": true
+}
+
+5️⃣ Get Exam Analytics (Teacher/Admin)
+
+GET http://localhost:5000/api/exams/:id/analytics
+
+Headers:
+
+Authorization: Bearer <JWT_TOKEN_OF_TEACHER_OR_ADMIN>
+
+
+✅ Should return stats like:
+
+{
+  "total_students": 1,
+  "average_score": 3,
+  "highest_score": 3,
+  "lowest_score": 3,
+  "passed_count": 1,
+  "failed_count": 0
+}
+
+6️⃣ Verify in PostgreSQL
+
+Run queries:
+
+SELECT * FROM users;
+SELECT * FROM exams;
+SELECT * FROM questions;
+SELECT * FROM results;
+
+
+✅ You should see rows corresponding to the actions above.
+
+
+
+
+
+{
+  "email": "student@example.com",
+  "password": "password123"
+}
+
+{
+  "full_name": "Test Student",
+  "email": "student@example.com",
+  "password": "password123",
+  "role": "student"
+}
+
+
+{
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6Niwicm9sZSI6InN0dWRlbnQiLCJpYXQiOjE3NzAwNDE1NjYsImV4cCI6MTc3MDEyNzk2Nn0.Y33Gp5hceyVLDqb9I0v5Gf70V_qWDXyVIzHnXDWlmYU",
+    "role": "student",
+    "name": "Test Student"
+}
+
+{
+  "full_name": "Test admin",
+  "email": "admin@example.com",
+  "password": "password123",
+  "role": "admin"
+}
+
+{
+    "message": "User registered successfully",
+    "user": {
+        "id": 7,
+        "email": "admin@example.com",
+        "role": "admin"
+    }
+}
+
+{
+  "email": "admin@example.com",
+  "password": "password123"
+}
+
+
+
+{
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6Nywicm9sZSI6ImFkbWluIiwiaWF0IjoxNzcwMTA5NDUzLCJleHAiOjE3NzAxOTU4NTN9.gEFyoofBYpGvSN0qGHZsqqH3NprJB-3_Cr6aUv3WxTA",
+    "role": "admin",
+    "name": "Test admin"
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+db  
+
+
+
+subject table
+
+"id"
+"name"
+"difficulty_level"
+
+
+exams table 
+
+"examid"
+"description"
+"duration"
+"created_by"
+"created_at"
+"subject_id"
+"start_time"
+"end_time"
+"status"
+
+
+users table
+
+"id"
+"full_name"
+"email"
+"password"
+"role"
+"created_at"
+
+results table
+
+"id"
+"student_id"
+"exam_id"
+"started_at"
+"submitted_at"
+"score"
+"percentage"
+"passed"
+"status"
+
+questions table
+"questionid"
+"question"
+"option_a"
+"option_b"
+"option_c"
+"option_d"
+"correct_option"
+"subject_id"
+
+
+exam_questions table
+"id"
+"examid"
+"questionid"
+
+proctoring_violations table
+"id"
+"student_id"
+"examid"
+"violation_type"
+"details"
+"created_at"
+
+
+
+student_answers table
+
+"id"
+"student_id"
+"examid"
+"questionid"
+"selected_option"
+"created_at"

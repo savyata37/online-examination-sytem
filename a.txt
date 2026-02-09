@@ -1,0 +1,468 @@
+
+
+
+
+import React, { useEffect, useState } from "react";
+import axios from "axios";
+import SummaryCards from "../../components/SummaryCards";
+import BarChartComponent from "../../components/charts/BarChartComponent";
+import LineChartComponent from "../../components/charts/LineChartComponent";
+import TeacherNavbar from "../../components/teacher/TeacherNavbar";
+import PieChartComponent from "../../components/charts/PieChartComponent";
+
+const MyStudentsAnalytics = () => {
+  const [students, setStudents] = useState([]);
+  const [studentId, setStudentId] = useState("");
+  const [summary, setSummary] = useState({});
+  const [examScores, setExamScores] = useState([]);
+  const [exams, setExams] = useState([]);
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [error, setError] = useState("");
+
+  const token = localStorage.getItem("token");
+  const axiosInstance = axios.create({
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  // Fetch all students for this teacher
+  useEffect(() => {
+    axiosInstance
+      .get("/api/teacher/my-students")
+      .then((res) => setStudents(res.data))
+      .catch((err) =>
+        setError(err.response?.data?.message || err.message || "Failed to fetch students")
+      );
+  }, []);
+
+  // Fetch analytics when student or date changes
+  useEffect(() => {
+    if (!studentId) return;
+
+    axiosInstance
+      .get("/api/teacher/my-students", {
+        params: { studentId, startDate, endDate },
+      })
+      .then((res) => {
+        const data = res.data;
+        setSummary(data.student_summary || {});
+        setExamScores(data.exam_scores || []);
+        setExams([...new Set((data.exam_scores || []).map((e) => e.exam))]);
+      })
+      .catch((err) =>
+        setError(err.response?.data?.message || err.message || "Failed to fetch analytics")
+      );
+  }, [studentId, startDate, endDate]);
+
+  // Compute Pass/Fail Counts for Pie Chart
+  const passFailCounts = examScores.reduce(
+    (acc, curr) => {
+      if (curr.passed) acc.pass += 1;
+      else acc.fail += 1;
+      return acc;
+    },
+    { pass: 0, fail: 0 }
+  );
+
+  return (
+    <>
+      <TeacherNavbar />
+      <div style={{ padding: "20px" }}>
+        <h2>Student Analytics</h2>
+
+        {error && <div style={{ color: "red", marginBottom: "15px" }}>{error}</div>}
+
+        {/* Date filters */}
+        <div style={{ display: "flex", gap: "10px", marginBottom: "15px" }}>
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+          />
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+          />
+        </div>
+
+        {/* Select Student */}
+        <select
+          value={studentId}
+          onChange={(e) => setStudentId(e.target.value)}
+          style={{ marginBottom: "20px", padding: "5px" }}
+        >
+          <option value="">Select Student</option>
+          {students.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.full_name}
+            </option>
+          ))}
+        </select>
+
+        {/* Summary Cards */}
+        {summary && Object.keys(summary).length > 0 && (
+          <SummaryCards
+            cards={[
+              { title: "Student Avg", value: summary.student_avg || 0 },
+              { title: "Class Avg", value: summary.class_avg || 0 },
+              { title: "Pass Ratio", value: summary.pass_ratio || "N/A" },
+            ]}
+          />
+        )}
+
+        {/* Exam Scores Bar Chart */}
+        <h3>Exam Scores</h3>
+        {examScores.length > 0 ? (
+          <BarChartComponent data={examScores} xKey="exam" barKey="score" />
+        ) : (
+          <p>No exam scores to display.</p>
+        )}
+
+        {/* Student Progress Line Chart */}
+        <h3>Student Progress</h3>
+        {examScores.length > 0 ? (
+          <LineChartComponent data={examScores} xKey="exam" lineKey="score" />
+        ) : (
+          <p>No progress data available.</p>
+        )}
+
+        {/* Pass vs Fail Pie Chart */}
+        <h3>Pass / Fail Ratio</h3>
+        {examScores.length > 0 ? (
+          <PieChartComponent
+            data={[
+              { name: "Passed", value: passFailCounts.pass },
+              { name: "Failed", value: passFailCounts.fail },
+            ]}
+            dataKey="value"
+            nameKey="name"
+          />
+        ) : (
+          <p>No pass/fail data available.</p>
+        )}
+
+        {/* Detailed Exam Table */}
+        <h3>Exam Details</h3>
+        {examScores.length > 0 ? (
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={{ border: "1px solid #ddd", padding: "8px" }}>Exam</th>
+                <th style={{ border: "1px solid #ddd", padding: "8px" }}>Score</th>
+                <th style={{ border: "1px solid #ddd", padding: "8px" }}>Percentage</th>
+                <th style={{ border: "1px solid #ddd", padding: "8px" }}>Passed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {examScores.map((e) => (
+                <tr key={e.exam + "_" + e.studentId}>
+                  <td style={{ border: "1px solid #ddd", padding: "8px" }}>{e.exam}</td>
+                  <td style={{ border: "1px solid #ddd", padding: "8px" }}>{e.score}</td>
+                  <td style={{ border: "1px solid #ddd", padding: "8px" }}>{e.percentage}%</td>
+                  <td style={{ border: "1px solid #ddd", padding: "8px" }}>
+                    {e.passed ? "Yes" : "No"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p>No exam data available.</p>
+        )}
+      </div>
+    </>
+  );
+};
+
+export default MyStudentsAnalytics;  
+
+
+import React, { useEffect, useState } from "react";
+import axios from "axios";
+import SummaryCards from "../../components/SummaryCards";
+import BarChartComponent from "../../components/charts/BarChartComponent";
+import PieChartComponent from "../../components/charts/PieChartComponent";
+import LineChartComponent from "../../components/charts/LineChartComponent";
+import TeacherNavbar from "../../components/teacher/TeacherNavbar";
+
+const MyExamsAnalytics = () => {
+  const [exams, setExams] = useState([]);
+  const [examId, setExamId] = useState("");
+  const [summary, setSummary] = useState({});
+  const [studentScores, setStudentScores] = useState([]);
+  const [error, setError] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+
+  const token = localStorage.getItem("token");
+  const axiosInstance = axios.create({
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  useEffect(() => {
+    axiosInstance
+      .get("/api/teacher/my-exams")
+      .then((res) => setExams(res.data))
+      .catch((err) => setError(err.response?.data?.message || err.message));
+  }, []);
+
+  useEffect(() => {
+    if (!examId) return;
+
+    axiosInstance
+      .get("/api/teacher/my-exams", {
+        params: { examId, startDate, endDate },
+      })
+      .then((res) => {
+        const data = res.data;
+        setSummary(data.exam_summary || {});
+        setStudentScores(data.student_scores || []);
+      })
+      .catch((err) => setError(err.response?.data?.message || err.message));
+  }, [examId, startDate, endDate]);
+
+  return (
+    <>
+      <TeacherNavbar />
+      <div style={{ padding: "20px" }}>
+        <h2>Exam Analytics</h2>
+        {error && <div style={{ color: "red" }}>{error}</div>}
+
+        {/* Date Filters */}
+        <div style={{ display: "flex", gap: "10px", marginBottom: "15px" }}>
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+          />
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+          />
+        </div>
+
+        {/* Exam Selector */}
+        <select
+          value={examId}
+          onChange={(e) => setExamId(e.target.value)}
+          style={{ marginBottom: "20px" }}
+        >
+          <option value="">Select Exam</option>
+          {exams.map((e) => (
+            <option key={e.examid} value={e.examid}>
+              {e.title}
+            </option>
+          ))}
+        </select>
+
+        {summary && Object.keys(summary).length > 0 && (
+          <SummaryCards
+            cards={[
+              { title: "Total Students", value: summary.total_students || 0 },
+              { title: "Average Score", value: summary.avg_score || 0 },
+              { title: "Difficulty", value: summary.difficulty || "N/A" },
+              { title: "Pass Ratio", value: summary.pass_ratio || "N/A" },
+            ]}
+          />
+        )}
+
+        <h3>Student Performance</h3>
+        <BarChartComponent
+          data={studentScores || []}
+          xKey="student"
+          barKey="score"
+        />
+
+        <h3>Score Distribution</h3>
+        <PieChartComponent
+          data={studentScores.map((s) => ({ name: s.student, value: s.score })) || []}
+          dataKey="value"
+          nameKey="name"
+        />
+
+        <h3>Performance Over Time</h3>
+        <LineChartComponent
+          data={studentScores || []}
+          xKey="student"
+          lineKey="score"
+        />
+      </div>
+    </>
+  );
+};
+
+export default MyExamsAnalytics;
+
+
+import React, { useEffect, useState } from "react";
+import axios from "axios";
+import SummaryCards from "../../components/SummaryCards";
+import BarChartComponent from "../../components/charts/BarChartComponent";
+import PieChartComponent from "../../components/charts/PieChartComponent";
+import TeacherNavbar from "../../components/teacher/TeacherNavbar";
+
+const MySubjectsAnalytics = () => {
+  const [subjects, setSubjects] = useState([]);
+  const [subjectId, setSubjectId] = useState("");
+  const [summary, setSummary] = useState({});
+  const [teacherScores, setTeacherScores] = useState([]);
+  const [studentScores, setStudentScores] = useState([]);
+  const [error, setError] = useState("");
+
+  const token = localStorage.getItem("token");
+  const axiosInstance = axios.create({
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  useEffect(() => {
+    axiosInstance
+      .get("/api/teacher/my-subjects")
+      .then((res) => setSubjects(res.data))
+      .catch((err) => setError(err.response?.data?.message || err.message));
+  }, []);
+
+  useEffect(() => {
+    if (!subjectId) return;
+
+    axiosInstance
+      .get("/api/teacher/my-subjects", { params: { subjectId } })
+      .then((res) => {
+        const data = res.data;
+        setSummary(data.subject_summary || {});
+        setTeacherScores(data.teacher_scores || []);
+        setStudentScores(data.student_scores || []);
+      })
+      .catch((err) => setError(err.response?.data?.message || err.message));
+  }, [subjectId]);
+
+  return (
+    <>
+      <TeacherNavbar />
+      <div style={{ padding: "20px" }}>
+        <h2>Subject Analytics</h2>
+        {error && <div style={{ color: "red" }}>{error}</div>}
+
+        <select
+          value={subjectId}
+          onChange={(e) => setSubjectId(e.target.value)}
+          style={{ marginBottom: "20px" }}
+        >
+          <option value="">Select Subject</option>
+          {subjects.map((s) => (
+            <option key={s.subjectid} value={s.subjectid}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+
+        {summary && Object.keys(summary).length > 0 && (
+          <SummaryCards
+            cards={[
+              { title: "Avg Teacher Score", value: summary.teacher_avg || 0 },
+              { title: "Avg Student Score", value: summary.student_avg || 0 },
+              { title: "Pass Ratio", value: summary.pass_ratio || "N/A" },
+            ]}
+          />
+        )}
+
+        <h3>Teacher Performance</h3>
+        <BarChartComponent data={teacherScores || []} xKey="teacher" barKey="score" />
+
+        <h3>Student Performance</h3>
+        <BarChartComponent data={studentScores || []} xKey="student" barKey="score" />
+
+        <h3>Score Distribution</h3>
+        <PieChartComponent
+          data={studentScores.map((s) => ({ name: s.student, value: s.score })) || []}
+          dataKey="value"
+          nameKey="name"
+        />
+      </div>
+    </>
+  );
+};
+
+export default MySubjectsAnalytics;
+
+import React, { useEffect, useState } from "react";
+import axios from "axios";
+import SummaryCards from "../../components/SummaryCards";
+import BarChartComponent from "../../components/charts/BarChartComponent";
+import LineChartComponent from "../../components/charts/LineChartComponent";
+import TeacherNavbar from "../../components/teacher/TeacherNavbar";
+
+const SelfTeacherAnalytics = () => {
+  const [summary, setSummary] = useState({});
+  const [studentProgress, setStudentProgress] = useState([]);
+  const [ranking, setRanking] = useState([]);
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [error, setError] = useState("");
+
+  const token = localStorage.getItem("token");
+  const axiosInstance = axios.create({
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  useEffect(() => {
+    axiosInstance
+      .get("/api/teacher/self", { params: { startDate, endDate } })
+      .then((res) => {
+        const data = res.data;
+        setSummary(data.teacher_summary || {});
+        setStudentProgress(data.student_progress || []);
+        setRanking(data.teacher_ranking || []);
+      })
+      .catch((err) => setError(err.response?.data?.message || err.message));
+  }, [startDate, endDate]);
+
+  return (
+    <>
+      <TeacherNavbar />
+      <div style={{ padding: "20px" }}>
+        <h2>Self Analytics</h2>
+        {error && <div style={{ color: "red" }}>{error}</div>}
+
+        {/* Date Filters */}
+        <div style={{ display: "flex", gap: "10px", marginBottom: "15px" }}>
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+          />
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+          />
+        </div>
+
+        {summary && Object.keys(summary).length > 0 && (
+          <SummaryCards
+            cards={[
+              { title: "Teacher Avg", value: summary.teacher_avg || 0 },
+              { title: "Subject Avg", value: summary.subject_avg || 0 },
+              { title: "Overall Avg", value: summary.overall_avg || 0 },
+              { title: "Pass Ratio", value: summary.pass_ratio || "N/A" },
+            ]}
+          />
+        )}
+
+        <h3>Student Progress</h3>
+        <LineChartComponent
+          data={studentProgress || []}
+          xKey="exam"
+          lineKey="avg_score"
+        />
+
+        <h3>Teacher Ranking</h3>
+        <BarChartComponent data={ranking || []} xKey="teacher" barKey="avg_score" />
+      </div>
+    </>
+  );
+};
+
+export default SelfTeacherAnalytics;
+ 
