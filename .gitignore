@@ -1,4 +1,4 @@
 node_modules
-.env
+exam-backend/.env
 build
 dist
