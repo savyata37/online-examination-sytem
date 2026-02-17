@@ -65,3 +65,8 @@ Audit Trail: You can now see exactly when a student or teacher changes their inf
 Consistency: All users (Admin, Teacher, Student) now follow the exact same image pathing logic.
 
 Performance: Using JOIN in the getProfile (like we did for Admin) is always faster than running two separate queries.
+
+
+DATABASE_URL="postgresql://exam_system_h4o6_user:qV1Q2eqECzL60ubnxf0dIOeAwdEPznp6@dpg-d6aauarnv86c73ee480g-a.singapore-postgres.render.com/exam_system_h4o6\nJWT_SECRET=supersecretkey"
+JWT_SECRET=supersecretkey
+PORT=5000
