@@ -3,6 +3,8 @@
 const express = require("express");
 const router = express.Router();
 const { auth } = require("../middleware/authMiddleware");
+const multer = require("multer");
+const path = require("path");
 const {
   getQuestionsBySubject,
   createQuestion,
@@ -17,6 +19,13 @@ const {
   getTeacherExams,
   getExamAnalytics,
   getExamResults,
+  getProfile,
+  updateProfile,
+  getMySubjectsAnalytics,
+  getSelfAnalytics,
+  getProctoringViolations,
+  removeProfilePic
+
 
   //   getSubjects,
   // getTeacherExams,
@@ -35,6 +44,15 @@ const teacherAuth = auth(["teacher", "admin"]);
 // router.use(auth(["teacher", "admin"]));
 
 // console.log("createExam =", createExam);
+
+
+// ------------------ File upload config ------------------
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, "uploads/"),
+  filename: (req, file, cb) =>
+    cb(null, req.user.id + path.extname(file.originalname)),
+});
+const upload = multer({ storage });
 
 /* ---------------- EXAMS ---------------- */
 router.post("/exams", teacherAuth, createExam);
@@ -60,30 +78,22 @@ router.get("/analytics/examResults", teacherAuth, getExamResults);
 
 router.get("/analytics/exam/:examid", teacherAuth, getExamAnalytics);
 
-// router.get("/teacher/subjects", teacherAuth, getSubjects);
-// router.get("/teacher/exams", teacherAuth, getTeacherExams);
-// router.get("/exams/:examid/analytics", teacherAuth, getExamAnalytics);
-// router.get("/my-students-analytics", teacherAuth, getMyStudentsAnalytics1);
-// router.get("/my-exams-analytics", teacherAuth, getMyExamsAnalytics);
-// router.get("/my-subjects-analytics", teacherAuth, getMySubjectsAnalytics);
-// router.get("/my-performance-analytics", teacherAuth, getMyPerformanceAnalytics);
-// router.get("/my-exam-analytics-by-student/:examid", teacherAuth, getExamAnalyticsByStudent);
-// router.get("/my-student-analytics/:studentid", teacherAuth, getMyStudentAnalyticsById);
+// GET all violations
+router.get('/proctoring_violations',teacherAuth, getProctoringViolations);
 
 
-
-// // Filters (date / exam / subject)
-// router.get("/my-students", teacherAuth, getMyStudentsAnalytics);
-// router.get("/my-exams", teacherAuth, getMyExamsAnalytics);
-// router.get("/my-subjects", teacherAuth, getMySubjectsAnalytics);
-// router.get("/self", teacherAuth, getMyPerformanceAnalytics);
-
-// router.get("/analytics/students", teacherAuth, getStudentAnalytics);
+router.get("/my-subjects", teacherAuth, getMySubjectsAnalytics);
+router.get("/self", teacherAuth, getSelfAnalytics);
 
 
 
 /* ---------------- QUESTIONS ---------------- */
 router.get("/questions",  teacherAuth, getQuestionsBySubject); // ?subjectid=...
 router.post("/questions", teacherAuth, createQuestion);
+
+// ------------------ Profile Routes ------------------
+router.get("/profile", auth(["teacher"]), getProfile);
+router.put("/profile", auth(["teacher"]), upload.single("profile_pic"), updateProfile);
+router.delete("/profile", auth(["teacher"]), removeProfilePic);
 
 module.exports = router;
