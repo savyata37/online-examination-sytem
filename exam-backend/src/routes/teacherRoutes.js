@@ -10,7 +10,7 @@ const {
   createQuestion,
   addQuestionsToExam,
   getExamById,
-  createExam,
+  // createExam,
   getAllExams,
 
   getAddedQuestionsByExam,
@@ -24,18 +24,16 @@ const {
   getMySubjectsAnalytics,
   getSelfAnalytics,
   getProctoringViolations,
-  removeProfilePic
+  removeProfilePic,
+  createSubjectiveQuestion,
+  getSubjectiveSubmissions,
+  gradeSubjectiveAnswer,
+  getSubjectiveQuestionBank,
+  addSubjectiveQuestionsToExam,
+  getSubjectiveQuestionsByExam,
+  getSubjectiveGradesByExam,
+  getStudentAnalyticsWithSubjective
 
-
-  //   getSubjects,
-  // getTeacherExams,
-   // getExamAnalytics,
-  // getMyStudentsAnalytics1,
-  // getMyExamsAnalytics,
-  // getMySubjectsAnalytics,
-  // getMyPerformanceAnalytics,
-  // getExamAnalyticsByStudent,
-  // getMyStudentAnalyticsById
 } = require("../controllers/teacherController");
 
 
@@ -55,7 +53,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 /* ---------------- EXAMS ---------------- */
-router.post("/exams", teacherAuth, createExam);
+// router.post("/exams", teacherAuth, createExam);
 router.get("/exams", teacherAuth, getAllExams);
 router.get("/exams/:examid", teacherAuth, getExamById);
 router.post("/exams/:examid/questions", teacherAuth, addQuestionsToExam);
@@ -96,4 +94,25 @@ router.get("/profile", auth(["teacher"]), getProfile);
 router.put("/profile", auth(["teacher"]), upload.single("profile_pic"), updateProfile);
 router.delete("/profile", auth(["teacher"]), removeProfilePic);
 
+
+
+/* ---------------- SUBJECTIVE EXAMS ---------------- */
+
+// Subjective question routes
+router.post("/subjective-question-bank", teacherAuth, createSubjectiveQuestion);
+router.get("/subjective-question-bank", teacherAuth, getSubjectiveQuestionBank);
+
+router.post("/exams/:examid/subjective", teacherAuth, addSubjectiveQuestionsToExam);
+router.get("/exams/:examid/subjective", teacherAuth, getSubjectiveQuestionsByExam);
+
+router.get("/exams/:examid/subjective-submissions", teacherAuth, getSubjectiveSubmissions);
+router.get("/subjective-submissions", teacherAuth, getSubjectiveSubmissions);
+router.post("/subjective/grade", teacherAuth, gradeSubjectiveAnswer);
+
+// Analytics with subjective grades
+router.get("/subjective-grades", teacherAuth, getSubjectiveGradesByExam);
+router.get("/analytics/students-with-subjective", teacherAuth, getStudentAnalyticsWithSubjective);
+router.get("/exam-results", teacherAuth, getExamResults);
+
 module.exports = router;
+

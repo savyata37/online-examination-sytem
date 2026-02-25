@@ -19,7 +19,13 @@ const {
   getProfile,
   takeExam,
   updateProfile,
-  removestdProfilePic
+  removestdProfilePic,
+  log_Violation,
+  submitSubjectiveAnswer, 
+  getSubjectiveQuestions,
+  getMySubjectiveFeedback,
+  getOverallPerformance,
+  getMyExamsWithGrades
 } = require("../controllers/studentController");
 
 
@@ -48,11 +54,43 @@ router.post("/:examId/submit", auth(["student"]), submitExam);
 
 
 // Log violation
-router.post("/proctoring/violation", auth(["student"]), logViolation);
+router.post("/proctoring_violations", auth(["student"]), log_Violation);
+// routes/proctoringRoutes.js or teacherRoutes.js
+router.get("/proctoring/violation", auth(["teacher"]), logViolation);
+
+
+// Fetch subjective questions for a given exam
+router.get(
+  "/subjective-questions",
+  auth(["student"]),
+  getSubjectiveQuestions
+);
+
+// Upload student's subjective answer (image/pdf)
+router.post(
+  "/subjective-answers",
+  auth(["student"]),
+  upload.array("files"),
+  submitSubjectiveAnswer 
+);
+
+// Get student's subjective feedback
+router.get(
+  "/subjective-feedback",
+  auth(["student"]),
+  getMySubjectiveFeedback
+);
+
 
 
   // Get subject-wise performance
   router.get("/subject-performance", auth(["student"]), getSubjectPerformance);
+
+  // Get overall performance (objective + subjective)
+  router.get("/overall-performance", auth(["student"]), getOverallPerformance);
+
+  // Get all exams with grades (objective + subjective)
+  router.get("/exams-with-grades", auth(["student"]), getMyExamsWithGrades);
 
   // Get wrong questions
   router.get("/wrong-questions", auth(["student"]), getWrongQuestions);

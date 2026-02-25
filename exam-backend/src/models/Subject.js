@@ -1,3 +1,3 @@
 module.exports = {
-  table: "subjects",
+  table: "subject",
 };

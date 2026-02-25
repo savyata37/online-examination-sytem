@@ -1,5 +1,278 @@
 
 
+/* ---------------- LOG VIOLATION ---------------- */
+// exports.logViolation = async (req, res) => {
+//   const { examId, violationType, details } = req.body;
+//   const studentId = req.user.id;
+
+//   if (!examId || !violationType)
+//     return res.status(400).json({ message: "examId and violationType are required" });
+
+//   try {
+//     await pool.query(
+//       `INSERT INTO proctoring_violations (student_id, examid, violation_type, details, created_at)
+//        VALUES ($1, $2, $3, $4, NOW())`,
+//       [studentId, examId, violationType, details || null]
+//     );
+
+//     res.json({ message: "Violation logged" });
+//   } catch (err) {
+//     console.error("Log violation error:", err);
+//     res.status(500).json({ message: "Failed to log violation" });
+//   }
+// };
+
+// /* ---------------- SUBMIT EXAM ---------------- */
+// exports.submitExam = async (req, res) => {
+//   const { answers } = req.body;
+//   const examId = parseInt(req.params.id || req.body.examId, 10);
+//   const studentId = req.user.id;
+
+//   try {
+//     const resultRes = await pool.query(
+//       `SELECT * FROM results WHERE exam_id=$1 AND student_id=$2`,
+//       [examId, studentId]
+//     );
+
+//     if (!resultRes.rows.length)
+//       return res.status(403).json({ message: "Exam not started" });
+
+//     const attempt = resultRes.rows[0];
+
+//     if (attempt.status !== "started")
+//       return res.status(403).json({ message: "Exam already submitted" });
+
+//     // Fetch exam questions
+//     const qRes = await pool.query(
+//       `SELECT q.* 
+//        FROM exam_questions eq
+//        JOIN questions q ON eq.questionid = q.questionid
+//        WHERE eq.examid=$1`,
+//       [examId]
+//     );
+
+//     const questions = qRes.rows;
+
+//     // Insert student answers
+//     const insertPromises = questions.map(q => {
+//       const selectedOption = answers[q.questionid] || null;
+//       return pool.query(
+//         `INSERT INTO student_answers (student_id, examid, questionid, selected_option)
+//          VALUES ($1, $2, $3, $4)
+//          ON CONFLICT (student_id, examid, questionid)
+//          DO UPDATE SET selected_option = EXCLUDED.selected_option`,
+//         [studentId, examId, q.questionid, selectedOption]
+//       );
+//     });
+//     await Promise.all(insertPromises);
+
+//     // Calculate score
+//     const score = questions.reduce((acc, q) => {
+//       const selected = answers[q.questionid];
+//       return selected === q.correct_option ? acc + 1 : acc;
+//     }, 0);
+
+//     const totalQuestions = questions.length;
+//     const percentage = totalQuestions ? (score / totalQuestions) * 100 : 0;
+//     const passed = percentage >= 40;
+
+//     await pool.query(
+//       `UPDATE results
+//        SET score=$1, percentage=$2, passed=$3, submitted_at=NOW(), status='submitted'
+//        WHERE id=$4`,
+//       [score, percentage, passed, attempt.id]
+//     );
+
+//     res.json({ message: "Exam submitted successfully", score, percentage, passed });
+//   } catch (err) {
+//     console.error("Submit exam error:", err);
+//     res.status(500).json({ message: "Failed to submit exam" });
+//   }
+// };
+
+
+
+// /* ---------------- UPDATED LOG VIOLATION ---------------- */
+// exports.logViolation = async (req, res) => {
+//   const { examId, violationType, details } = req.body;
+//   const studentId = req.user.id;
+
+//   if (!examId || !violationType)
+//     return res.status(400).json({ message: "examId and violationType are required" });
+
+//   try {
+//     // 1. Insert the violation
+//     await pool.query(
+//       `INSERT INTO proctoring_violations (student_id, examid, violation_type, details, created_at)
+//        VALUES ($1, $2, $3, $4, NOW())`,
+//       [studentId, examId, violationType, details || null]
+//     );
+
+//     // 2. Count total violations for this specific exam session
+//     const countRes = await pool.query(
+//       `SELECT COUNT(*) FROM proctoring_violations 
+//        WHERE student_id = $1 AND examid = $2`,
+//       [studentId, examId]
+//     );
+
+//     const violationCount = parseInt(countRes.rows[0].count);
+
+//     // 3. Trigger Auto-Submit if threshold reached (e.g., 5)
+//     if (violationCount >= 15) {
+//       return res.json({ 
+//         action: "AUTO_SUBMIT", 
+//         message: "Maximum violations reached. Exam auto-submitted.",
+//         violations: violationCount 
+//       });
+//     }
+
+//     res.json({ action: "WARN", violations: violationCount });
+//   } catch (err) {
+//     console.error("Log violation error:", err);
+//     res.status(500).json({ message: "Failed to log violation" });
+//   }
+// };
+
+// /* ---------------- LOG VIOLATION ---------------- */
+// exports.logViolation = async (req, res) => {
+//   const { examId, violationType, details } = req.body;
+//   const studentId = req.user.id;
+
+//   if (!examId || !violationType)
+//     return res.status(400).json({ message: "examId and violationType required" });
+
+//   try {
+//     // Normalize to lowercase to match enum
+//     const safeType = violationType.toLowerCase();
+
+//     // Insert violation
+//     await pool.query(
+//       `INSERT INTO proctoring_violations 
+//        (student_id, examid, violation_type, details, created_at)
+//        VALUES ($1, $2, $3::violation_enum, $4, NOW())`,
+//       [studentId, examId, safeType, details || null]
+//     );
+
+//     // Count violations for this exam
+//     const countRes = await pool.query(
+//       `SELECT COUNT(*) FROM proctoring_violations
+//        WHERE student_id=$1 AND examid=$2`,
+//       [studentId, examId]
+//     );
+
+//     const violations = parseInt(countRes.rows[0].count);
+
+//     const THRESHOLD = 5;
+//     if (violations >= THRESHOLD) {
+//       // Auto-submit exam
+//       await pool.query(
+//         `UPDATE results
+//          SET submitted_at = NOW(), status='submitted'
+//          WHERE student_id=$1 AND exam_id=$2 AND status='started'`,
+//         [studentId, examId]
+//       );
+
+//       return res.json({
+//         action: "AUTO_SUBMIT",
+//         message: "Exam auto-submitted due to violations",
+//         violations
+//       });
+//     }
+
+//     res.json({ action: "WARN", violations });
+//   } catch (err) {
+//     console.error("Log violation error:", err);
+//     res.status(500).json({ message: "Failed to log violation" });
+//   }
+// };
+
+
+// /* ---------------- LOG VIOLATION ---------------- */
+// exports.logViolation = async (req, res) => {
+//   const { examId, violationType, details } = req.body;
+//   const studentId = req.user.id;
+
+//   if (!examId || !violationType)
+//     return res.status(400).json({ message: "examId and violationType required" });
+
+//   try {
+//     // 1. Normalize enum
+//     const safeType = violationType.toLowerCase();
+
+//     // 2. Insert violation
+//     await pool.query(
+//       `INSERT INTO proctoring_violations 
+//        (student_id, exam_id, violation_type, details, detected_at, severity, is_flagged)
+//        VALUES ($1, $2, $3::violation_enum, $4, NOW(), 1, false)`,
+//       [studentId, examId, safeType, details || null]
+//     );
+
+//     // 3. Count violations for this exam
+//     const countRes = await pool.query(
+//       `SELECT COUNT(*) FROM proctoring_violations
+//        WHERE student_id=$1 AND exam_id=$2`,
+//       [studentId, examId]
+//     );
+
+//     const violations = parseInt(countRes.rows[0].count);
+
+//     // 4. Auto-submit if threshold reached
+//     const THRESHOLD = 5;
+//     if (violations >= THRESHOLD) {
+//       // Update the corresponding result row
+//       await pool.query(
+//         `UPDATE results
+//          SET submitted_at = NOW(), status='submitted'
+//          WHERE student_id=$1 AND exam_id=$2 AND status='started'`,
+//         [studentId, examId]
+//       );
+
+//       return res.json({
+//         action: "AUTO_SUBMIT",
+//         message: "Exam auto-submitted due to violations",
+//         violations
+//       });
+//     }
+
+//     res.json({ action: "WARN", violations });
+//   } catch (err) {
+//     console.error("Log violation error:", err);
+//     res.status(500).json({ message: "Failed to log violation" });
+//   }
+// };
+
+
+// /* ---------------- GET WRONG QUESTIONS ---------------- */
+// exports.getWrongQuestions = async (req, res) => {
+//   const studentId = req.user.id;
+
+//   try {
+//     const result = await pool.query(
+//       `
+//       SELECT 
+//         q.questionid,
+//         q.question,
+//         sa.selected_option AS student_answer,
+//         q.correct_option,
+//         s.name AS subject_name
+//       FROM student_answers sa
+//       JOIN questions q ON sa.questionid = q.questionid
+//       JOIN subject s ON q.subject_id = s.id
+//       JOIN exams e ON sa.examid = e.examid
+//       WHERE sa.student_id = $1
+//         AND sa.selected_option IS DISTINCT FROM q.correct_option
+//       ORDER BY sa.examid, q.questionid
+//       `,
+//       [studentId]
+//     );
+
+//     res.json(result.rows);
+//   } catch (err) {
+//     console.error("getWrongQuestions error:", err);
+//     res.status(500).json({ message: "Failed to fetch wrong questions" });
+//   }
+// };
+
 
 const pool = require("../config/db");
 const calculateScore = require("../utils/calculateScore");
@@ -22,12 +295,15 @@ exports.getAvailableExams = async (req, res) => {
         e.examid,
         e.title,
         e.description,
+        e.exam_type,
         e.duration,
         e.start_time,
         e.end_time,
+        u.full_name AS teachername,
         s.name AS subject_name
       FROM exams e
       LEFT JOIN subject s ON e.subject_id = s.id
+      LEFT JOIN users u ON e.created_by = u.id
       ORDER BY e.start_time DESC
     `);
 
@@ -149,136 +425,7 @@ exports.takeExam = async (req, res) => {
   }
 };
 
-/* ---------------- SUBMIT EXAM ---------------- */
-exports.submitExam = async (req, res) => {
-  const { answers } = req.body;
-  const examId = parseInt(req.params.id || req.body.examId, 10);
-  const studentId = req.user.id;
 
-  try {
-    const resultRes = await pool.query(
-      `SELECT * FROM results WHERE exam_id=$1 AND student_id=$2`,
-      [examId, studentId]
-    );
-
-    if (!resultRes.rows.length)
-      return res.status(403).json({ message: "Exam not started" });
-
-    const attempt = resultRes.rows[0];
-
-    if (attempt.status !== "started")
-      return res.status(403).json({ message: "Exam already submitted" });
-
-    // Fetch exam questions
-    const qRes = await pool.query(
-      `SELECT q.* 
-       FROM exam_questions eq
-       JOIN questions q ON eq.questionid = q.questionid
-       WHERE eq.examid=$1`,
-      [examId]
-    );
-
-    const questions = qRes.rows;
-
-    // Insert student answers
-    const insertPromises = questions.map(q => {
-      const selectedOption = answers[q.questionid] || null;
-      return pool.query(
-        `INSERT INTO student_answers (student_id, examid, questionid, selected_option)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (student_id, examid, questionid)
-         DO UPDATE SET selected_option = EXCLUDED.selected_option`,
-        [studentId, examId, q.questionid, selectedOption]
-      );
-    });
-    await Promise.all(insertPromises);
-
-    // Calculate score
-    const score = questions.reduce((acc, q) => {
-      const selected = answers[q.questionid];
-      return selected === q.correct_option ? acc + 1 : acc;
-    }, 0);
-
-    const totalQuestions = questions.length;
-    const percentage = totalQuestions ? (score / totalQuestions) * 100 : 0;
-    const passed = percentage >= 40;
-
-    await pool.query(
-      `UPDATE results
-       SET score=$1, percentage=$2, passed=$3, submitted_at=NOW(), status='submitted'
-       WHERE id=$4`,
-      [score, percentage, passed, attempt.id]
-    );
-
-    res.json({ message: "Exam submitted successfully", score, percentage, passed });
-  } catch (err) {
-    console.error("Submit exam error:", err);
-    res.status(500).json({ message: "Failed to submit exam" });
-  }
-};
-
-/* ---------------- LOG VIOLATION ---------------- */
-// exports.logViolation = async (req, res) => {
-//   const { examId, violationType, details } = req.body;
-//   const studentId = req.user.id;
-
-//   if (!examId || !violationType)
-//     return res.status(400).json({ message: "examId and violationType are required" });
-
-//   try {
-//     await pool.query(
-//       `INSERT INTO proctoring_violations (student_id, examid, violation_type, details, created_at)
-//        VALUES ($1, $2, $3, $4, NOW())`,
-//       [studentId, examId, violationType, details || null]
-//     );
-
-//     res.json({ message: "Violation logged" });
-//   } catch (err) {
-//     console.error("Log violation error:", err);
-//     res.status(500).json({ message: "Failed to log violation" });
-//   }
-// };
-
-/* ---------------- UPDATED LOG VIOLATION ---------------- */
-exports.logViolation = async (req, res) => {
-  const { examId, violationType, details } = req.body;
-  const studentId = req.user.id;
-
-  if (!examId || !violationType)
-    return res.status(400).json({ message: "examId and violationType are required" });
-
-  try {
-    // 1. Insert the violation
-    await pool.query(
-      `INSERT INTO proctoring_violations (student_id, examid, violation_type, details, created_at)
-       VALUES ($1, $2, $3, $4, NOW())`,
-      [studentId, examId, violationType, details || null]
-    );
-
-    // 2. Count total violations for this specific exam session
-    const countRes = await pool.query(
-      `SELECT COUNT(*) FROM proctoring_violations 
-       WHERE student_id = $1 AND examid = $2`,
-      [studentId, examId]
-    );
-
-    const violationCount = parseInt(countRes.rows[0].count);
-
-    // 3. Trigger Auto-Submit if threshold reached (e.g., 5)
-    if (violationCount >= 15) {
-      return res.json({ 
-        action: "AUTO_SUBMIT", 
-        message: "Maximum violations reached. Exam auto-submitted.",
-        violations: violationCount 
-      });
-    }
-
-    res.json({ action: "WARN", violations: violationCount });
-  } catch (err) {
-    console.error("Log violation error:", err);
-    res.status(500).json({ message: "Failed to log violation" });
-  }
-};
 
 /* ---------------- GET MY RESULTS ---------------- */
 exports.getMyResults = async (req, res) => {
@@ -305,6 +452,168 @@ exports.getMyResults = async (req, res) => {
     res.status(500).json({ message: "Failed to fetch results" });
   }
 };
+
+
+/* ---------------- SUBMIT EXAM ---------------- */
+exports.submitExam = async (req, res) => {
+  const { answers } = req.body;
+  const examId = parseInt(req.params.examId || req.body.examId, 10); // correct param
+  const studentId = req.user.id;
+
+  try {
+    // 1. Get result row
+    const resultRes = await pool.query(
+      `SELECT * FROM results WHERE exam_id=$1 AND student_id=$2`,
+      [examId, studentId]
+    );
+
+    if (!resultRes.rows.length)
+      return res.status(403).json({ message: "Exam not started" });
+
+    const attempt = resultRes.rows[0];
+    if (attempt.status !== "started")
+      return res.status(403).json({ message: "Exam already submitted" });
+
+    // 2. Fetch exam questions
+    const qRes = await pool.query(
+      `SELECT q.* 
+       FROM exam_questions eq
+       JOIN questions q ON eq.questionid = q.questionid
+       WHERE eq.examid=$1`,
+      [examId]
+    );
+
+    const questions = qRes.rows;
+
+    // 3. Insert or update student answers
+    const insertPromises = questions.map(q => {
+      const selectedOption = answers[q.questionid] || null;
+
+      return pool.query(
+        `INSERT INTO student_answers (student_id, examid, questionid, selected_option, created_at)
+         VALUES ($1, $2, $3, $4, NOW())
+         ON CONFLICT (student_id, examid, questionid)
+         DO UPDATE SET selected_option = EXCLUDED.selected_option`,
+        [studentId, examId, q.questionid, selectedOption]
+      );
+    });
+    await Promise.all(insertPromises);
+
+    // 4. Calculate score
+    const score = questions.reduce((acc, q) => {
+      const selected = answers[q.questionid];
+      return selected === q.correct_option ? acc + 1 : acc;
+    }, 0);
+
+    const totalQuestions = questions.length;
+    const percentage = totalQuestions ? (score / totalQuestions) * 100 : 0;
+    const passed = percentage >= 40;
+
+    // 5. Update results table
+    await pool.query(
+      `UPDATE results
+       SET score=$1, percentage=$2, passed=$3, submitted_at=NOW(), status='submitted'
+       WHERE id=$4`,
+      [score, percentage, passed, attempt.id]
+    );
+
+    res.json({ message: "Exam submitted successfully", score, percentage, passed });
+  } catch (err) {
+    console.error("Submit exam error:", err);
+    res.status(500).json({ message: "Failed to submit exam" });
+  }
+};
+
+
+ exports.log_Violation = async (req, res) => {
+  // try {
+  //   const result = await pool.query(
+  //     `SELECT pv.*, s.name as student_name, e.title as exam_title
+  //      FROM proctoring_violations pv
+  //      JOIN students s ON pv.student_id = s.id
+  //      JOIN exams e ON pv.exam_id = e.id
+  //      ORDER BY pv.detected_at DESC`
+  //   );
+
+  //   res.json(result.rows);
+  // } catch (err) {
+  //   console.error("Fetch violations error:", err);
+  //   res.status(500).json({ message: "Failed to fetch violations" });
+  // }
+
+    try {
+    const result = await pool.query(
+      `SELECT pv.id, pv.violation_type, pv.details, pv.detected_at, pv.severity, pv.is_flagged, pv.resolved,
+              pv.result_id, s.full_name AS student_name, e.description AS exam_description, e.title AS exam_title
+       FROM proctoring_violations pv
+       JOIN users s ON pv.student_id = s.id
+       JOIN exams e ON pv.exam_id = e.examid
+       ORDER BY pv.detected_at DESC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Fetch violations error:", err);
+    res.status(500).json({ message: "Failed to fetch violations" });
+  }
+
+};
+
+
+
+/* ---------------- LOG VIOLATION ---------------- */
+exports.logViolation = async (req, res) => {
+  const { examId, violationType, details } = req.body;
+  const studentId = req.user.id;
+
+  if (!examId || !violationType)
+    return res.status(400).json({ message: "examId and violationType required" });
+
+  try {
+    // 1. Normalize enum
+    const safeType = violationType.toLowerCase();
+
+    // 2. Insert violation
+    await pool.query(
+      `INSERT INTO proctoring_violations 
+       (student_id, exam_id, violation_type, details, detected_at, severity, is_flagged)
+       VALUES ($1, $2, $3::violation_enum, $4, NOW(), 1, false)`,
+      [studentId, examId, safeType, details || null]
+    );
+
+    // 3. Count violations for this exam
+    const countRes = await pool.query(
+      `SELECT COUNT(*) FROM proctoring_violations
+       WHERE student_id=$1 AND exam_id=$2`,
+      [studentId, examId]
+    );
+
+    const violations = parseInt(countRes.rows[0].count);
+
+    // 4. Auto-submit if threshold reached
+    const THRESHOLD = 5;
+    if (violations >= THRESHOLD) {
+      // Update the corresponding result row
+      await pool.query(
+        `UPDATE results
+         SET submitted_at = NOW(), status='submitted'
+         WHERE student_id=$1 AND exam_id=$2 AND status='started'`,
+        [studentId, examId]
+      );
+
+      return res.json({
+        action: "AUTO_SUBMIT",
+        message: "Exam auto-submitted due to violations",
+        violations
+      });
+    }
+
+    res.json({ action: "WARN", violations });
+  } catch (err) {
+    console.error("Log violation error:", err);
+    res.status(500).json({ message: "Failed to log violation" });
+  }
+};
+
 
 /* ---------------- GET SUBJECT PERFORMANCE ---------------- */
 exports.getSubjectPerformance = async (req, res) => {
@@ -337,36 +646,115 @@ exports.getSubjectPerformance = async (req, res) => {
   }
 };
 
-// /* ---------------- GET WRONG QUESTIONS ---------------- */
-// exports.getWrongQuestions = async (req, res) => {
-//   const studentId = req.user.id;
+/* =====================================================
+   GET OVERALL PERFORMANCE WITH SUBJECTIVE GRADES
+===================================================== */
+exports.getOverallPerformance = async (req, res) => {
+  const studentId = req.user.id;
 
-//   try {
-//     const result = await pool.query(
-//       `
-//       SELECT 
-//         q.questionid,
-//         q.question,
-//         sa.selected_option AS student_answer,
-//         q.correct_option,
-//         s.name AS subject_name
-//       FROM student_answers sa
-//       JOIN questions q ON sa.questionid = q.questionid
-//       JOIN subject s ON q.subject_id = s.id
-//       JOIN exams e ON sa.examid = e.examid
-//       WHERE sa.student_id = $1
-//         AND sa.selected_option IS DISTINCT FROM q.correct_option
-//       ORDER BY sa.examid, q.questionid
-//       `,
-//       [studentId]
-//     );
+  try {
+    // 1. Get objective exam average
+    const objectiveAvg = await pool.query(
+      `SELECT COALESCE(AVG(r.percentage), 0) as avg_score
+       FROM results r
+       JOIN exams e ON r.exam_id = e.examid
+       WHERE r.student_id = $1 AND e.exam_type = 'objective'`,
+      [studentId]
+    );
 
-//     res.json(result.rows);
-//   } catch (err) {
-//     console.error("getWrongQuestions error:", err);
-//     res.status(500).json({ message: "Failed to fetch wrong questions" });
-//   }
-// };
+    // 2. Get subjective exam average
+    const subjectiveAvg = await pool.query(
+      `SELECT 
+        COALESCE(AVG(total_percentage), 0) as avg_score
+       FROM (
+        SELECT 
+          CASE WHEN COALESCE(SUM(sq.marks), 0) > 0
+               THEN ROUND(COALESCE(SUM(sa.marks_obtained), 0)::numeric / COALESCE(SUM(sq.marks), 0) * 100, 2)
+               ELSE 0
+          END as total_percentage
+         FROM subjective_answers sa
+         JOIN subjective_question_bank sq ON sa.subjectiveid = sq.subjectiveid
+         JOIN exams e ON sa.examid = e.examid
+         WHERE sa.student_id = $1 AND e.exam_type = 'subjective'
+         GROUP BY e.examid
+       ) sub`,
+      [studentId]
+    );
+
+    const objAvg = parseFloat(objectiveAvg.rows[0]?.avg_score || 0);
+    const subjAvg = parseFloat(subjectiveAvg.rows[0]?.avg_score || 0);
+
+    res.json({
+      objective_average: objAvg,
+      subjective_average: subjAvg,
+      overall_average: Math.round((objAvg + subjAvg) / 2),
+      objective_count: objAvg > 0 ? 1 : 0,
+      subjective_count: subjAvg > 0 ? 1 : 0
+    });
+  } catch (err) {
+    console.error("getOverallPerformance error:", err);
+    res.status(500).json({ message: "Failed to fetch overall performance" });
+  }
+};
+
+/* =====================================================
+   GET ALL EXAMS WITH GRADES (OBJECTIVE + SUBJECTIVE)
+===================================================== */
+exports.getMyExamsWithGrades = async (req, res) => {
+  const studentId = req.user.id;
+
+  try {
+    // 1. Get objective exams
+    const objectiveExams = await pool.query(
+      `SELECT 
+         e.examid,
+         e.title,
+         r.score,
+         r.percentage::float AS percentage,
+         r.passed,
+         r.submitted_at,
+         'objective' as exam_type
+       FROM results r
+       JOIN exams e ON r.exam_id = e.examid
+       WHERE r.student_id = $1 AND e.exam_type = 'objective'
+       ORDER BY r.submitted_at DESC`,
+      [studentId]
+    );
+
+    // 2. Get subjective exams with grades
+    const subjectiveExams = await pool.query(
+      `SELECT 
+         e.examid,
+         e.title,
+         COALESCE(SUM(sa.marks_obtained), 0) as score,
+         CASE WHEN COALESCE(SUM(sq.marks), 0) > 0
+              THEN ROUND(COALESCE(SUM(sa.marks_obtained), 0)::numeric / COALESCE(SUM(sq.marks), 0) * 100, 2)
+              ELSE 0
+         END as percentage,
+         COALESCE(SUM(sq.marks), 0) as total_marks,
+         MAX(sa.submitted_at) as submitted_at,
+         'subjective' as exam_type
+       FROM subjective_answers sa
+       JOIN subjective_question_bank sq ON sa.subjectiveid = sq.subjectiveid
+       JOIN exams e ON sa.examid = e.examid
+       WHERE sa.student_id = $1 AND e.exam_type = 'subjective'
+       GROUP BY e.examid, e.title
+       ORDER BY submitted_at DESC`,
+      [studentId]
+    );
+
+    const allExams = [
+      ...objectiveExams.rows,
+      ...subjectiveExams.rows
+    ].sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
+
+    res.json(allExams);
+  } catch (err) {
+    console.error("getMyExamsWithGrades error:", err);
+    res.status(500).json({ message: "Failed to fetch exams with grades" });
+  }
+};
+
 /* ---------------- GET WRONG QUESTIONS WITH FULL TEXT ---------------- */
 exports.getWrongQuestions = async (req, res) => {
   const studentId = req.user.id;
@@ -412,160 +800,6 @@ exports.getWrongQuestions = async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 };
-
-
-// /* ---------------- GET PROFILE ---------------- */ 
-// exports.getProfile = async (req, res) => {
-//   try {
-//     const studentId = req.user.id;
-
-//     // Fetch basic user info
-//     const userResult = await pool.query(
-//       "SELECT id, full_name, email, role FROM users WHERE id=$1",
-//       [studentId]
-//     );
-
-//     if (!userResult.rows.length)
-//       return res.status(404).json({ message: "Student not found" });
-
-//     // Fetch profile picture
-//     const profileResult = await pool.query(
-//       "SELECT profile_pic FROM user_profiles WHERE user_id=$1",
-//       [studentId]
-//     );
-
-//     let profilePic = profileResult.rows[0]?.profile_pic || null;
-
-//     // 🔥 Prepend full backend URL if profile_pic exists
-//     if (profilePic) {
-//       profilePic = `http://localhost:5000/uploads/${profilePic}`;
-//     }
-
-//     // Send response
-//     res.json({
-//       ...userResult.rows[0],
-//       profile_pic: profilePic,
-//     });
-    
-//   } catch (err) {
-//     console.error("Error fetching profile:", err);
-//     res.status(500).json({ message: "Server error" });
-//   }
-// };
-
-
-// // exports.updateProfile = async (req, res) => {
-// //   try {
-// //     const studentId = req.user.id;
-// //     const { full_name, email } = req.body;
-// //     const profile_pic = req.file ? `/uploads/${req.file.filename}` : null;
-
-// //     const userResult = await pool.query(
-// //       "UPDATE users SET full_name=$1, email=$2 WHERE id=$3 RETURNING id, full_name, email, role",
-// //       [full_name, email, studentId]
-// //     );
-
-// //     if (profile_pic) {
-// //       await pool.query(
-// //         `INSERT INTO user_profiles(user_id, profile_pic)
-// //          VALUES($1, $2)
-// //          ON CONFLICT (user_id)
-// //          DO UPDATE SET profile_pic = EXCLUDED.profile_pic`,
-// //         [studentId, profile_pic]
-// //       );
-// //     }
-
-// //     const profileResult = await pool.query(
-// //       "SELECT profile_pic FROM user_profiles WHERE user_id=$1",
-// //       [studentId]
-// //     );
-
-// //     res.json({
-// //       ...userResult.rows[0],
-// //       profile_pic: profileResult.rows[0]?.profile_pic || null,
-// //     });
-// //   } catch (err) {
-// //     console.error("Error updating profile:", err);
-// //     res.status(500).json({ message: "Server error" });
-// //   }
-// // };
-
-
-
-// /* ---------------- UPDATE STUDENT PROFILE ---------------- */
-// exports.updateProfile = async (req, res) => {
-//   try {
-//     const studentId = req.user.id;
-//     const { full_name, email } = req.body;
-    
-//     // Store ONLY the filename in DB, not the path
-//     const filename = req.file ? req.file.filename : null;
-
-//     const userResult = await pool.query(
-//       "UPDATE users SET full_name=$1, email=$2 WHERE id=$3 RETURNING id, full_name, email, role",
-//       [full_name, email, studentId]
-//     );
-
-//     if (filename) {
-//       await pool.query(
-//         `INSERT INTO user_profiles(user_id, profile_pic)
-//          VALUES($1, $2)
-//          ON CONFLICT (user_id) 
-//          DO UPDATE SET profile_pic = EXCLUDED.profile_pic`,
-//         [studentId, filename]
-//       );
-      
-//       // LOG ACTIVITY: Student updated profile
-//       await pool.query(
-//         "INSERT INTO activity_logs (user_id, action, details) VALUES ($1, $2, $3)",
-//         [studentId, 'PROFILE_UPDATE', `Updated name/email and profile picture`]
-//       );
-//     }
-
-//     const profileResult = await pool.query(
-//       "SELECT profile_pic FROM user_profiles WHERE user_id=$1",
-//       [studentId]
-//     );
-
-//     const dbPath = profileResult.rows[0]?.profile_pic;
-
-//     res.json({
-//       ...userResult.rows[0],
-//       profile_pic: dbPath ? `http://localhost:5000/uploads/${dbPath}` : null,
-//     });
-//   } catch (err) {
-//     console.error("Error updating profile:", err);
-//     res.status(500).json({ message: "Server error" });
-//   }
-// };
-
-
-
-
-// /* ---------------- REMOVE PROFILE PICTURE ---------------- */
-// exports.removestdProfilePic = async (req, res) => {
-//   try {
-//     const teacherId = req.user.id;
-//     await pool.query(
-//       "UPDATE user_profiles SET profile_pic = NULL WHERE user_id = $1",
-//       [teacherId]
-//     );
-    
-//     // Fetch updated user info to return
-//     const userResult = await pool.query(
-//       "SELECT id, full_name, email, role FROM users WHERE id = $1",
-//       [teacherId]
-//     );
-
-//     res.json({
-//       ...userResult.rows[0],
-//       profile_pic: null
-//     });
-//   } catch (err) {
-//     console.error("Error removing profile pic:", err);
-//     res.status(500).json({ message: "Server error" });
-//   }
-// };
 
 
 
@@ -662,5 +896,324 @@ exports.removestdProfilePic = async (req, res) => {
   } catch (err) {
     console.error("Error removing profile pic:", err);
     res.status(500).json({ message: "Server error" });
+  }
+};
+
+
+// exports.getSubjectiveQuestions = async (req, res) => {
+//   try {
+//     const { examid } = req.query;
+//     if (!examid) return res.status(400).json({ message: "Exam ID required" });
+
+//     const questions = await pool.find({ examid });
+
+//     res.json(questions);
+//   } catch (err) {
+//     console.error(err);
+//     res.status(500).json({ message: "Failed to fetch questions" });
+//   }
+// };
+
+
+// exports.submitSubjectiveAnswer = async (req, res) => {
+//   try {
+//     const { subjectiveid } = req.body;
+//     if (!subjectiveid) return res.status(400).json({ message: "Question ID required" });
+
+//     if (!req.file) return res.status(400).json({ message: "File is required" });
+
+//     // Save in DB
+//     const answer = await SubjectiveAnswer.create({
+//       student_id: req.user.id,
+//       subjectiveid,
+//       file_url: `/uploads/${req.file.filename}`,
+//       submitted_at: new Date(),
+//     });
+
+//     res.json({ message: "Answer uploaded successfully", answer });
+//   } catch (err) {
+//     console.error(err);
+//     res.status(500).json({ message: "Failed to submit answer" });
+//   }
+// };
+
+
+
+exports.getSubjectiveQuestions = async (req, res) => {
+  try {
+    const { examid } = req.query;
+    if (!examid) {
+      return res.status(400).json({ message: "Exam ID required" });
+    }
+
+    const examMetaQuery = `
+      SELECT
+        e.examid,
+        e.duration,
+        e.start_time,
+        e.end_time,
+        r.started_at,
+        r.status
+      FROM exams e
+      LEFT JOIN results r
+        ON r.exam_id = e.examid
+       AND r.student_id = $2
+      WHERE e.examid = $1
+      LIMIT 1
+    `;
+
+    const examMetaRes = await pool.query(examMetaQuery, [examid, req.user.id]);
+    if (!examMetaRes.rows.length) {
+      return res.status(404).json({ message: "Exam not found" });
+    }
+
+    const examMeta = examMetaRes.rows[0];
+
+    if (!examMeta.started_at) {
+      return res.status(403).json({ message: "Exam not started" });
+    }
+
+    if (examMeta.status === "submitted") {
+      return res.status(403).json({ message: "Exam already submitted" });
+    }
+
+    const now = new Date();
+    const startedAt = new Date(examMeta.started_at);
+    const durationDeadline = new Date(
+      startedAt.getTime() + Number(examMeta.duration || 0) * 60 * 1000
+    );
+    const slotEndTime = examMeta.end_time ? new Date(examMeta.end_time) : null;
+    const deadline = slotEndTime && slotEndTime < durationDeadline ? slotEndTime : durationDeadline;
+    const remainingSeconds = Math.max(0, Math.floor((deadline - now) / 1000));
+
+    const query = `
+      SELECT 
+        sq.subjectiveid,
+        sq.question,
+        sq.marks
+      FROM exam_subjective_questions esq
+      JOIN subjective_question_bank sq
+        ON esq.subjectiveid = sq.subjectiveid
+      WHERE esq.examid = $1
+      ORDER BY sq.subjectiveid ASC
+    `;
+
+    const { rows } = await pool.query(query, [examid]);
+
+    res.json({
+      exam: {
+        examid: examMeta.examid,
+        duration: examMeta.duration,
+        start_time: examMeta.start_time,
+        end_time: examMeta.end_time,
+        started_at: examMeta.started_at,
+        remaining_seconds: remainingSeconds,
+      },
+      questions: rows,
+    });
+  } catch (err) {
+    console.error("Error fetching subjective questions:", err);
+    res.status(500).json({ message: "Failed to fetch questions" });
+  }
+};
+
+
+
+
+// exports.submitSubjectiveAnswer = async (req, res) => {
+//   try {
+//     const { examid } = req.body;
+//     const subjectiveids = req.body.subjectiveids; 
+//     const files = req.files;
+
+//     // // const { subjectiveid } = req.body;
+//     // if (!subjectiveid) return res.status(400).json({ message: "Question ID required" });
+//     // if (!req.file) return res.status(400).json({ message: "File is required" });
+
+//     const file_url = `/uploads/${req.file.filename}`;
+//     const submitted_at = new Date();
+
+//     const query = `
+//       INSERT INTO subjective_answers(student_id, subjectiveid, file_url, submitted_at)
+//       VALUES ($1, $2, $3, $4)
+//       RETURNING *;
+//     `;
+//     const values = [req.user.id, subjectiveid, file_url, submitted_at];
+
+//     const { rows } = await pool.query(query, values);
+
+//     res.json({ message: "Answer uploaded successfully", answer: rows[0] });
+//   } catch (err) {
+//     console.error(err);
+//     res.status(500).json({ message: "Failed to submit answer" });
+//   }
+// };
+
+
+
+/* ---------------- GET STUDENT SUBJECTIVE FEEDBACK ---------------- */
+exports.getMySubjectiveFeedback = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const { examid } = req.query;
+
+    let query;
+    let params;
+
+    if (examid) {
+      query = `
+        SELECT 
+          sa.answerid,
+          sa.examid,
+          e.title AS exam_title,
+          sq.subjectiveid,
+          sq.question,
+          sq.marks AS max_marks,
+          sa.file_url,
+          sa.submitted_at,
+          sa.marks_obtained,
+          sa.feedback
+        FROM subjective_answers sa
+        JOIN subjective_question_bank sq ON sa.subjectiveid = sq.subjectiveid
+        JOIN exams e ON sa.examid = e.examid
+        WHERE sa.student_id = $1 AND sa.examid = $2
+        ORDER BY sq.subjectiveid ASC;
+      `;
+      params = [studentId, examid];
+    } else {
+      query = `
+        SELECT 
+          sa.answerid,
+          sa.examid,
+          e.title AS exam_title,
+          sq.subjectiveid,
+          sq.question,
+          sq.marks AS max_marks,
+          sa.file_url,
+          sa.submitted_at,
+          sa.marks_obtained,
+          sa.feedback
+        FROM subjective_answers sa
+        JOIN subjective_question_bank sq ON sa.subjectiveid = sq.subjectiveid
+        JOIN exams e ON sa.examid = e.examid
+        WHERE sa.student_id = $1
+        ORDER BY sa.submitted_at DESC;
+      `;
+      params = [studentId];
+    }
+
+    const { rows } = await pool.query(query, params);
+
+    res.json(rows);
+  } catch (err) {
+    console.error("getMySubjectiveFeedback error:", err);
+    res.status(500).json({ message: "Failed to fetch feedback" });
+  }
+};
+
+exports.submitSubjectiveAnswer = async (req, res) => {
+  try {
+    const { examid } = req.body;
+    const subjectiveids = req.body.subjectiveids; // array
+    const files = req.files;
+    const autoSubmit = String(req.body.auto_submit || "false") === "true";
+
+    if (!examid) {
+      return res.status(400).json({ message: "Exam ID required" });
+    }
+
+    const attemptRes = await pool.query(
+      `SELECT id, started_at, status
+       FROM results
+       WHERE exam_id = $1 AND student_id = $2
+       LIMIT 1`,
+      [examid, req.user.id]
+    );
+
+    if (!attemptRes.rows.length) {
+      return res.status(403).json({ message: "Exam not started" });
+    }
+
+    const attempt = attemptRes.rows[0];
+    if (attempt.status === "submitted") {
+      return res.status(403).json({ message: "Exam already submitted" });
+    }
+
+    const examRes = await pool.query(
+      `SELECT duration, end_time FROM exams WHERE examid = $1 LIMIT 1`,
+      [examid]
+    );
+
+    if (!examRes.rows.length) {
+      return res.status(404).json({ message: "Exam not found" });
+    }
+
+    const now = new Date();
+    const startedAt = new Date(attempt.started_at);
+    const durationDeadline = new Date(
+      startedAt.getTime() + Number(examRes.rows[0].duration || 0) * 60 * 1000
+    );
+    const slotEndTime = examRes.rows[0].end_time
+      ? new Date(examRes.rows[0].end_time)
+      : null;
+    const deadline = slotEndTime && slotEndTime < durationDeadline ? slotEndTime : durationDeadline;
+    const isExpired = now > deadline;
+
+    if (isExpired && !autoSubmit) {
+      return res.status(403).json({ message: "Exam time is over" });
+    }
+
+    if ((!files || files.length === 0) && !autoSubmit) {
+      return res.status(400).json({ message: "Files are required" });
+    }
+
+    const submitted_at = new Date();
+
+    const insertedAnswers = [];
+
+    if (files && files.length) {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const subjectiveid = Array.isArray(subjectiveids)
+          ? subjectiveids[i]
+          : subjectiveids;
+
+        const file_url = `/uploads/${file.filename}`;
+
+        const query = `
+          INSERT INTO subjective_answers
+          (student_id, examid, subjectiveid, file_url, submitted_at)
+          VALUES ($1, $2, $3, $4, $5)
+          RETURNING *;
+        `;
+
+        const values = [
+          req.user.id,
+          examid,
+          subjectiveid,
+          file_url,
+          submitted_at,
+        ];
+
+        const { rows } = await pool.query(query, values);
+        insertedAnswers.push(rows[0]);
+      }
+    }
+
+    await pool.query(
+      `UPDATE results
+       SET submitted_at = $1, status = 'submitted'
+       WHERE id = $2`,
+      [submitted_at, attempt.id]
+    );
+
+    res.json({
+      message: isExpired ? "Exam auto-submitted after time limit" : "All answers uploaded successfully",
+      answers: insertedAnswers,
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to submit answers" });
   }
 };

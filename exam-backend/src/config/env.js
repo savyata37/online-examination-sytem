@@ -1,9 +1,9 @@
-// // require("dotenv").config();
+require("dotenv").config();
 
-// // module.exports = {
-// //   PORT: process.env.PORT || 5000,
-// //   JWT_SECRET: process.env.JWT_SECRET
-// // };
+module.exports = {
+  PORT: process.env.PORT || 5000,
+  JWT_SECRET: process.env.JWT_SECRET
+};
 
 
 // require("dotenv").config();
@@ -15,15 +15,15 @@
 // };
 
 
-// Only require dotenv locally
-if (process.env.NODE_ENV !== "production") {
-  require("dotenv").config();
-}
+// // Only require dotenv locally
+// if (process.env.NODE_ENV !== "production") {
+//   require("dotenv").config();
+// }
 
-module.exports = {
-  PORT: process.env.PORT || 5000,
-  JWT_SECRET: process.env.JWT_SECRET,
-  DATABASE_URL: process.env.DATABASE_URL
-};
+// module.exports = {
+//   PORT: process.env.PORT || 5000,
+//   JWT_SECRET: process.env.JWT_SECRET,
+//   DATABASE_URL: process.env.DATABASE_URL
+// };
 
 

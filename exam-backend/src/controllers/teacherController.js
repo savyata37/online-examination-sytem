@@ -1,6 +1,4 @@
 
-
-
 // // controllers/teacherAnalyticsController.js
 // backend/src/controllers/teacherController.js
 
@@ -22,40 +20,7 @@ const calculatePassRatio = (scores, passMark = 40) => {
   return ((passed / scores.length) * 100).toFixed(2);
 };
 
-/* =====================================================
-   CREATE EXAM
-===================================================== */
-exports.createExam = async (req, res) => {
-  try {
-    const { title, description, duration, subject_id, start_time, end_time, status } = req.body;
 
-    if (!title || !duration || !subject_id) {
-      return res.status(400).json({ message: "Title, duration, and subject are required" });
-    }
-
-    const result = await pool.query(
-      `INSERT INTO exams
-       (title, description, duration, subject_id, created_by, start_time, end_time, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-       RETURNING *`,
-      [
-        title,
-        description || "",
-        duration,
-        subject_id,
-        req.user.id,
-        start_time || null,
-        end_time || null,
-        status || "upcoming",
-      ]
-    );
-
-    res.status(201).json(result.rows[0]);
-  } catch (err) {
-    console.error("Create exam error:", err);
-    res.status(500).json({ message: "Failed to create exam" });
-  }
-};
 
 /* =====================================================
    GET ALL EXAMS
@@ -67,6 +32,7 @@ exports.getAllExams = async (req, res) => {
          e.examid,
          e.title,
          e.description,
+         e.exam_type,
          e.duration,
          e.start_time,
          e.end_time,
@@ -103,6 +69,7 @@ exports.getExamById = async (req, res) => {
          e.examid,
          e.title,
          e.description,
+         e.exam_type,
          e.duration,
          e.subject_id,
          s.name AS subject_name,
@@ -392,9 +359,10 @@ exports.getExamAnalytics = async (req, res) => {
 
 exports.getExamResults = async (req, res) => {
   try {
-    const teacherId = req.user.id; // assuming you have auth middleware and teacher id in req.user
+    const teacherId = req.user.id; 
 
-    const query = `
+    // 1. Get objective exam results
+    const objectiveQuery = `
       SELECT 
         r.id AS result_id,
         u.id AS student_id,
@@ -405,18 +373,56 @@ exports.getExamResults = async (req, res) => {
         r.score,
         r.percentage::float AS percentage,
         r.passed,
-        r.started_at,
-        r.submitted_at
+        r.submitted_at,
+        e.exam_type,
+        NULL as subjective_score
       FROM results r
       JOIN exams e ON r.exam_id = e.examid
       JOIN users u ON r.student_id = u.id
       JOIN subject s ON e.subject_id = s.id
-      WHERE e.created_by = $1
+      WHERE e.created_by = $1 AND e.exam_type = 'objective'
       ORDER BY r.submitted_at DESC
     `;
 
-    const { rows } = await pool.query(query, [teacherId]);
-    res.json(rows);
+    // 2. Get subjective exam results
+    const subjectiveQuery = `
+      SELECT 
+        NULL as result_id,
+        sa.student_id,
+        u.full_name AS student_name,
+        e.examid AS exam_id,
+        e.description AS exam,
+        s.name AS subject,
+        COALESCE(SUM(sa.marks_obtained), 0)::int as score,
+        CASE WHEN COALESCE(SUM(sq.marks), 0) > 0
+             THEN ROUND(COALESCE(SUM(sa.marks_obtained), 0)::numeric / COALESCE(SUM(sq.marks), 0) * 100, 2)
+             ELSE 0
+        END as percentage,
+        CASE WHEN COALESCE(SUM(sa.marks_obtained), 0) >= COALESCE(SUM(sq.marks) * 0.4, 0) THEN true ELSE false END as passed,
+        MAX(sa.submitted_at) as submitted_at,
+        e.exam_type,
+        COALESCE(SUM(sa.marks_obtained), 0) as subjective_score
+      FROM subjective_answers sa
+      JOIN subjective_question_bank sq ON sa.subjectiveid = sq.subjectiveid
+      JOIN exams e ON sa.examid = e.examid
+      JOIN users u ON sa.student_id = u.id
+      JOIN subject s ON e.subject_id = s.id
+      WHERE e.created_by = $1 AND e.exam_type = 'subjective'
+      GROUP BY sa.student_id, u.full_name, e.examid, e.description, s.name, e.exam_type
+      ORDER BY submitted_at DESC
+    `;
+
+    const [objectiveRes, subjectiveRes] = await Promise.all([
+      pool.query(objectiveQuery, [teacherId]),
+      pool.query(subjectiveQuery, [teacherId])
+    ]);
+
+    const combined = [
+      ...objectiveRes.rows,
+      ...subjectiveRes.rows
+    ].sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
+
+    res.json(combined);
   } catch (err) {
     console.error("Error fetching exam results:", err);
     res.status(500).json({ message: "Server error" });
@@ -424,188 +430,6 @@ exports.getExamResults = async (req, res) => {
 };
 
 
-
-// /* ---------------- GET TEACHER PROFILE ---------------- */ 
-// exports.getProfile = async (req, res) => {
-//   try {
-//     const teacherId = req.user.id;
-
-//     // Fetch basic teacher info
-//     const userResult = await pool.query(
-//       "SELECT id, full_name, email, role FROM users WHERE id=$1 AND role='teacher'",
-//       [teacherId]
-//     );
-
-//     if (!userResult.rows.length)
-//       return res.status(404).json({ message: "Teacher not found" });
-
-//     // Fetch teacher profile picture from user_profiles table
-//     const profileResult = await pool.query(
-//       "SELECT profile_pic FROM user_profiles WHERE user_id=$1",
-//       [teacherId]
-//     );
-
-//     let profilePic = profileResult.rows[0]?.profile_pic || null;
-
-//     // 🔥 Prepend full backend URL
-//     if (profilePic) {
-//       profilePic = `http://localhost:5000/uploads/${profilePic}`;
-//     }
-
-//     // Send combined JSON
-//     res.json({
-//       ...userResult.rows[0],
-//       profile_pic: profilePic,
-//     });
-
-//   } catch (err) {
-//     console.error("Error fetching teacher profile:", err);
-//     res.status(500).json({ message: "Server error" });
-//   }
-// };
-
-
-// // /* ---------------- UPDATE TEACHER PROFILE ---------------- */ 
-// // exports.updateProfile = async (req, res) => {
-// //   try {
-// //     const teacherId = req.user.id;
-// //     const { full_name, email } = req.body;
-// //     const profile_pic = req.file ? `/uploads/${req.file.filename}` : null;
-
-// //     // Update teacher's basic info
-// //     const userResult = await pool.query(
-// //       "UPDATE users SET full_name=$1, email=$2 WHERE id=$3 AND role='teacher' RETURNING id, full_name, email, role",
-// //       [full_name, email, teacherId]
-// //     );
-
-// //     // Update teacher profile picture
-// //     if (profile_pic) {
-// //       await pool.query(
-// //         `INSERT INTO user_profiles(user_id, profile_pic)
-// //          VALUES($1, $2)
-// //          ON CONFLICT (user_id)
-// //          DO UPDATE SET profile_pic = EXCLUDED.profile_pic`,
-// //         [teacherId, profile_pic]
-// //       );
-// //     }
-
-// //     // Fetch the updated profile picture
-// //     const profileResult = await pool.query(
-// //       "SELECT profile_pic FROM user_profiles WHERE user_id=$1",
-// //       [teacherId]
-// //     );
-
-// //     let updatedProfilePic = profileResult.rows[0]?.profile_pic || null;
-// //     if (updatedProfilePic) {
-// //       updatedProfilePic = `http://localhost:5000/uploads/${updatedProfilePic}`;
-// //     }
-
-// //     // Send response
-// //     res.json({
-// //       ...userResult.rows[0],
-// //       profile_pic: updatedProfilePic,
-// //     });
-
-// //   } catch (err) {
-// //     console.error("Error updating teacher profile:", err);
-// //     res.status(500).json({ message: "Server error" });
-// //   }
-// // };
-
-
-// /* ---------------- UPDATE TEACHER PROFILE ---------------- */ 
-// // exports.updateProfile = async (req, res) => {
-// //   try {
-// //     const teacherId = req.user.id;
-// //     const { full_name, email } = req.body;
-    
-// //     // 1. Only store the filename, NOT the "/uploads/" prefix
-// //     const profile_pic_filename = req.file ? req.file.filename : null;
-
-// //     const userResult = await pool.query(
-// //       "UPDATE users SET full_name=$1, email=$2 WHERE id=$3 AND role='teacher' RETURNING id, full_name, email, role",
-// //       [full_name, email, teacherId]
-// //     );
-
-// //     if (profile_pic_filename) {
-// //       await pool.query(
-// //         `INSERT INTO user_profiles(user_id, profile_pic)
-// //          VALUES($1, $2)
-// //          ON CONFLICT (user_id) 
-// //          DO UPDATE SET profile_pic = EXCLUDED.profile_pic`,
-// //         [teacherId, profile_pic_filename]
-// //       );
-// //     }
-
-// //     const profileResult = await pool.query(
-// //       "SELECT profile_pic FROM user_profiles WHERE user_id=$1",
-// //       [teacherId]
-// //     );
-
-// //     const rawPic = profileResult.rows[0]?.profile_pic;
-    
-// //     // 2. Ensure the URL is formed correctly with only one "uploads"
-// //     const updatedProfilePic = rawPic 
-// //       ? `http://localhost:5000/uploads/${rawPic}` 
-// //       : null;
-
-// //     res.json({
-// //       ...userResult.rows[0],
-// //       profile_pic: updatedProfilePic,
-// //     });
-
-// //   } catch (err) {
-// //     console.error("Error updating teacher profile:", err);
-// //     res.status(500).json({ message: "Server error" });
-// //   }
-// // };
-
-
-// /* ---------------- UPDATE TEACHER PROFILE ---------------- */ 
-// exports.updateProfile = async (req, res) => {
-//   try {
-//     const teacherId = req.user.id;
-//     const { full_name, email } = req.body;
-    
-//     // Store ONLY the filename, not the path
-//     const filename = req.file ? req.file.filename : null;
-
-//     // Update basic info
-//     const userResult = await pool.query(
-//       "UPDATE users SET full_name=$1, email=$2 WHERE id=$3 AND role='teacher' RETURNING id, full_name, email, role",
-//       [full_name, email, teacherId]
-//     );
-
-//     // Update or Insert profile pic
-//     if (filename) {
-//       await pool.query(
-//         `INSERT INTO user_profiles(user_id, profile_pic)
-//          VALUES($1, $2)
-//          ON CONFLICT (user_id) 
-//          DO UPDATE SET profile_pic = EXCLUDED.profile_pic`,
-//         [teacherId, filename]
-//       );
-//     }
-
-//     // Return the clean data
-//     const profileResult = await pool.query(
-//       "SELECT profile_pic FROM user_profiles WHERE user_id=$1",
-//       [teacherId]
-//     );
-
-//     const dbPath = profileResult.rows[0]?.profile_pic;
-    
-//     res.json({
-//       ...userResult.rows[0],
-//       // Construct clean URL here
-//       profile_pic: dbPath ? `http://localhost:5000/uploads/${dbPath}` : null,
-//     });
-
-//   } catch (err) {
-//     console.error("Error updating teacher profile:", err);
-//     res.status(500).json({ message: "Server error" });
-//   }
-// };
 
 exports.getMySubjectsAnalytics = async (req, res) => {
   try {
@@ -731,9 +555,9 @@ exports.getMyPerformanceAnalytics = async (req, res) => {
 exports.getProctoringViolations = async (req, res) => {
   try {
     const query = `
-      SELECT id, examid, student_id, violation_type, details, created_at
+      SELECT id, exam_id, student_id, violation_type, details, detected_at
       FROM proctoring_violations
-      ORDER BY created_at DESC
+      ORDER BY detected_at DESC
     `;
     const result = await pool.query(query);
     res.json(result.rows); // returns array of violations
@@ -821,7 +645,7 @@ exports.getSelfAnalytics = async (req, res) => {
     const violationsQuery = await pool.query(
       `SELECT s.name as subject_name, COUNT(pv.id) as violation_count
        FROM proctoring_violations pv
-       JOIN exams e ON pv.examid = e.examid
+       JOIN exams e ON pv.exam_id = e.examid
        JOIN subject s ON e.subject_id = s.id
        WHERE e.created_by = $1 ${dateFilter}
        GROUP BY s.name
@@ -914,5 +738,287 @@ exports.updateProfile = async (req, res) => {
   } catch (err) {
     console.error("Error updating teacher profile:", err);
     res.status(500).json({ message: "Server error" });
+  }
+};
+
+exports.createSubjectiveQuestion = async (req, res) => {
+  const { subject_id, question, marks } = req.body;
+  const teacher_id = req.user.id;
+
+  const result = await pool.query(
+    `INSERT INTO subjective_question_bank 
+     (subject_id, question, marks, created_by) 
+     VALUES ($1, $2, $3, $4)
+     RETURNING *`,
+    [subject_id, question, marks || 5, teacher_id]
+  );
+
+  res.json(result.rows[0]);
+};
+
+exports.getSubjectiveQuestionBank = async (req, res) => {
+  const { subject_id } = req.query;
+
+  const result = await pool.query(
+    `SELECT * FROM subjective_question_bank 
+     WHERE subject_id = $1`,
+    [subject_id]
+  );
+
+  res.json(result.rows);
+};
+
+
+exports.addSubjectiveQuestionsToExam = async (req, res) => {
+  const { examid } = req.params;
+  const { questionids } = req.body;
+
+  const values = [];
+  const placeholders = questionids
+    .map((id, index) => {
+      values.push(examid, id);
+      return `($${index * 2 + 1}, $${index * 2 + 2})`;
+    })
+    .join(",");
+
+  await pool.query(
+    `INSERT INTO exam_subjective_questions (examid, subjectiveid) 
+     VALUES ${placeholders}`,
+    values
+  );
+
+  res.json({ message: "Questions added to exam" });
+};
+
+exports.getSubjectiveQuestionsByExam = async (req, res) => {
+  const { examid } = req.params;
+
+  const result = await pool.query(
+    `SELECT sq.*, esq.examid 
+     FROM subjective_question_bank sq
+     JOIN exam_subjective_questions esq 
+     ON sq.subjectiveid = esq.subjectiveid
+     WHERE esq.examid = $1`,
+    [examid]
+  );
+
+  res.json(result.rows);
+};
+
+exports.getSubjectiveSubmissions = async (req, res) => {
+  try {
+    const examid = req.params.examid || req.query.examid;
+
+    let query;
+    let params = [];
+
+    if (examid) {
+      query = `
+        SELECT 
+          sa.answerid,
+          sa.student_id,
+          sa.examid,
+          u.full_name AS student_name,
+          sq.subjectiveid,
+          sq.question AS question,
+          sq.marks AS max_marks,
+          sa.file_url,
+          sa.submitted_at,
+          sa.marks_obtained,
+          sa.feedback
+        FROM subjective_answers sa
+        JOIN subjective_question_bank sq ON sa.subjectiveid = sq.subjectiveid
+        JOIN users u ON sa.student_id = u.id
+        WHERE sa.examid = $1
+        ORDER BY sa.submitted_at DESC;
+      `;
+      params = [examid];
+    } else {
+      query = `
+        SELECT 
+          sa.answerid,
+          sa.student_id,
+          sa.examid,
+          u.full_name AS student_name,
+          sq.subjectiveid,
+          sq.question AS question,
+          sq.marks AS max_marks,
+          sa.file_url,
+          sa.submitted_at,
+          sa.marks_obtained,
+          sa.feedback
+        FROM subjective_answers sa
+        JOIN subjective_question_bank sq ON sa.subjectiveid = sq.subjectiveid
+        JOIN users u ON sa.student_id = u.id
+        ORDER BY sa.submitted_at DESC;
+      `;
+    }
+
+    const { rows } = await pool.query(query, params);
+
+    res.json(rows);
+  } catch (err) {
+    console.error("getSubjectiveSubmissions error:", err);
+    res.status(500).json({ message: "Failed to fetch subjective submissions" });
+  }
+};
+
+
+exports.gradeSubjectiveAnswer = async (req, res) => {
+  try {
+    const { answerid, marks_obtained, feedback } = req.body;
+
+    if (!answerid) {
+      return res.status(400).json({ message: "Answer ID is required" });
+    }
+
+    // Validate marks
+    if (marks_obtained !== null && marks_obtained !== undefined) {
+      const marksValue = Number(marks_obtained);
+      if (marksValue < 0) {
+        return res.status(400).json({ message: "Marks cannot be less than 0" });
+      }
+
+      // Get max marks for this question
+      const maxMarksQuery = `
+        SELECT sq.marks
+        FROM subjective_answers sa
+        JOIN subjective_question_bank sq ON sa.subjectiveid = sq.subjectiveid
+        WHERE sa.answerid = $1
+      `;
+      const maxMarksResult = await pool.query(maxMarksQuery, [answerid]);
+      
+      if (maxMarksResult.rows.length > 0) {
+        const maxMarks = Number(maxMarksResult.rows[0].marks);
+        if (marksValue > maxMarks) {
+          return res.status(400).json({ 
+            message: `Marks cannot exceed maximum marks (${maxMarks})` 
+          });
+        }
+      }
+    }
+
+    const query = `
+      UPDATE subjective_answers
+      SET marks_obtained = $1,
+          feedback = $2
+      WHERE answerid = $3
+      RETURNING *;
+    `;
+
+    const values = [marks_obtained || 0, feedback || null, answerid];
+
+    const { rows } = await pool.query(query, values);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: "Answer not found" });
+    }
+
+    res.json({
+      message: "Answer graded successfully",
+      gradedAnswer: rows[0],
+    });
+  } catch (err) {
+    console.error("gradeSubjectiveAnswer error:", err);
+    res.status(500).json({ message: "Failed to grade answer", error: err.message });
+  }
+};
+
+/* =====================================================
+   GET SUBJECTIVE GRADES FOR ANALYTICS
+===================================================== */
+exports.getSubjectiveGradesByExam = async (req, res) => {
+  try {
+    const { examid } = req.query;
+    
+    if (!examid) {
+      return res.status(400).json({ message: "examid is required" });
+    }
+
+    const query = `
+      SELECT 
+        COALESCE(sa.student_id, 0) as student_id,
+        u.full_name as student_name,
+        sa.examid,
+        COALESCE(ROUND(AVG(sa.marks_obtained)::numeric, 2), 0) as subjective_score,
+        COALESCE(SUM(sq.marks), 0) as total_subjective_marks,
+        COUNT(sa.answerid) as total_questions_graded
+      FROM subjective_answers sa
+      JOIN subjective_question_bank sq ON sa.subjectiveid = sq.subjectiveid
+      LEFT JOIN users u ON sa.student_id = u.id
+      WHERE sa.examid = $1
+      GROUP BY sa.student_id, u.full_name, sa.examid
+      ORDER BY student_name ASC
+    `;
+
+    const { rows } = await pool.query(query, [examid]);
+    res.json(rows);
+  } catch (err) {
+    console.error("getSubjectiveGradesByExam error:", err);
+    res.status(500).json({ message: "Failed to fetch subjective grades" });
+  }
+};
+
+exports.getStudentAnalyticsWithSubjective = async (req, res) => {
+  try {
+    const teacherId = req.user.id;
+
+    // Get objective exam scores
+    const objectiveQuery = await pool.query(
+      `SELECT 
+         u.id AS student_id,
+         u.full_name,
+         e.description AS exam,
+         e.examid,
+         sub.name AS subject,
+         r.score,
+         r.percentage::float AS percentage,
+         r.passed
+       FROM results r
+       JOIN exams e ON r.exam_id = e.examid
+       JOIN users u ON r.student_id = u.id
+       JOIN subject sub ON e.subject_id = sub.id
+       WHERE e.created_by = $1 AND e.exam_type = 'objective'
+       ORDER BY r.submitted_at DESC`,
+      [teacherId]
+    );
+
+    // Get subjective exam scores
+    const subjectiveQuery = await pool.query(
+      `SELECT 
+         sa.student_id,
+         u.full_name,
+         e.description AS exam,
+         e.examid,
+         sub.name AS subject,
+         COALESCE(SUM(sa.marks_obtained), 0) as subjective_score,
+         COALESCE(SUM(sq.marks), 0) as total_marks,
+         CASE WHEN COALESCE(SUM(sq.marks), 0) > 0 
+              THEN ROUND(COALESCE(SUM(sa.marks_obtained), 0)::numeric / COALESCE(SUM(sq.marks), 0) * 100, 2)
+              ELSE 0 
+         END as percentage
+       FROM subjective_answers sa
+       JOIN subjective_question_bank sq ON sa.subjectiveid = sq.subjectiveid
+       JOIN exams e ON sa.examid = e.examid
+       JOIN users u ON sa.student_id = u.id
+       JOIN subject sub ON e.subject_id = sub.id
+       WHERE e.created_by = $1 AND e.exam_type = 'subjective'
+       GROUP BY sa.student_id, u.full_name, e.description, e.examid, sub.name
+       ORDER BY u.full_name ASC`,
+      [teacherId]
+    );
+
+    const combined = [
+      ...objectiveQuery.rows.map(r => ({ ...r, exam_type: 'objective' })),
+      ...subjectiveQuery.rows.map(r => ({ ...r, exam_type: 'subjective' }))
+    ];
+
+    res.json({
+      students: combined,
+      overview: { total_records: combined.length },
+    });
+  } catch (err) {
+    console.error("Failed to fetch student analytics with subjective:", err);
+    res.status(500).json({ message: "Failed to fetch student analytics" });
   }
 };

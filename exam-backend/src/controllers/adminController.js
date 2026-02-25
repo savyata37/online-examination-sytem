@@ -559,3 +559,153 @@ exports.removeAdminProfilePic = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
+/* =====================================================
+   GET SUBJECTIVE GRADES FOR ANALYTICS
+===================================================== */
+exports.getExamAnalyticsWithSubjective = async (req, res) => {
+  try {
+    const { examId } = req.query;
+    if (!examId) return res.status(400).json({ message: "Exam ID is required" });
+
+    // Get exam info first
+    const examRes = await pool.query(
+      `SELECT exam_type FROM exams WHERE examid = $1`,
+      [examId]
+    );
+
+    if (!examRes.rows.length) return res.status(404).json({ message: "Exam not found" });
+    
+    const examType = examRes.rows[0].exam_type;
+
+    // 1. Get Summary Info
+    const summaryRes = await pool.query(
+      `SELECT title, AVG(score) as avg_score, COUNT(student_id) as total_students 
+       FROM results r JOIN exams e ON r.exam_id = e.examid 
+       WHERE e.examid = $1 GROUP BY e.title`, [examId]
+    );
+
+    // 2. Get Individual Scores for Charts (Objective)
+    const scoresRes = await pool.query(
+      `SELECT u.full_name as student, r.score 
+       FROM results r JOIN users u ON r.student_id = u.id 
+       WHERE r.exam_id = $1`, [examId]
+    );
+
+    // 3. Get Subjective Scores if exam has subjective component
+    let subjectiveScores = [];
+    if (examType === 'subjective' || examType === 'mixed') {
+      const subjRes = await pool.query(
+        `SELECT 
+          u.full_name as student,
+          COALESCE(SUM(sa.marks_obtained), 0) as subjective_score,
+          COALESCE(SUM(sq.marks), 0) as total_marks
+         FROM subjective_answers sa
+         JOIN subjective_question_bank sq ON sa.subjectiveid = sq.subjectiveid
+         JOIN users u ON sa.student_id = u.id
+         WHERE sa.examid = $1
+         GROUP BY u.full_name
+         ORDER BY u.full_name ASC`,
+        [examId]
+      );
+      subjectiveScores = subjRes.rows;
+    }
+
+    res.json({
+      exam_summary: summaryRes.rows[0] || {},
+      student_scores: scoresRes.rows || [],
+      subjective_scores: subjectiveScores,
+      exam_type: examType
+    });
+  } catch (err) {
+    console.error("getExamAnalyticsWithSubjective error:", err);
+    res.status(500).json({ error: "Server Error" });
+  }
+};
+
+exports.getStudentAnalyticsWithSubjective = async (req, res) => {
+  try {
+    const { studentId } = req.query;
+
+    if (!studentId) {
+      return res.status(400).json({ error: "Student ID is required" });
+    }
+
+    // 1. Get Objective Exam Scores
+    const objectiveRes = await pool.query(
+      `SELECT e.title as exam, r.score, r.percentage
+       FROM results r
+       JOIN exams e ON r.exam_id = e.examid
+       WHERE r.student_id = $1 AND e.exam_type = 'objective'
+       ORDER BY e.start_time ASC`,
+      [studentId]
+    );
+
+    // 2. Get Subjective Exam Scores
+    const subjectiveRes = await pool.query(
+      `SELECT 
+        e.title as exam,
+        COALESCE(SUM(sa.marks_obtained), 0) as subjective_score,
+        COALESCE(SUM(sq.marks), 0) as total_marks,
+        CASE WHEN COALESCE(SUM(sq.marks), 0) > 0
+             THEN ROUND(COALESCE(SUM(sa.marks_obtained), 0)::numeric / COALESCE(SUM(sq.marks), 0) * 100, 2)
+             ELSE 0
+        END as percentage
+       FROM subjective_answers sa
+       JOIN subjective_question_bank sq ON sa.subjectiveid = sq.subjectiveid
+       JOIN exams e ON sa.examid = e.examid
+       WHERE sa.student_id = $1 AND e.exam_type = 'subjective'
+       GROUP BY e.title, e.start_time
+       ORDER BY e.start_time ASC`,
+      [studentId]
+    );
+
+    // 3. Fetch Summary Statistics
+    const objSummaryQuery = `
+      SELECT 
+        (SELECT AVG(score) FROM results WHERE student_id = $1 AND exam_id IN (
+          SELECT examid FROM exams WHERE exam_type = 'objective')) as objective_avg
+    `;
+    
+    const objSummaryRes = await pool.query(objSummaryQuery, [studentId]);
+
+    const subjSummaryQuery = `
+      SELECT 
+        COALESCE(AVG(total_percentage), 0) as subjective_avg
+       FROM (
+        SELECT 
+          CASE WHEN COALESCE(SUM(sq.marks), 0) > 0
+               THEN ROUND(COALESCE(SUM(sa.marks_obtained), 0)::numeric / COALESCE(SUM(sq.marks), 0) * 100, 2)
+               ELSE 0
+          END as total_percentage
+         FROM subjective_answers sa
+         JOIN subjective_question_bank sq ON sa.subjectiveid = sq.subjectiveid
+         JOIN exams e ON sa.examid = e.examid
+         WHERE sa.student_id = $1 AND e.exam_type = 'subjective'
+         GROUP BY e.examid
+       ) sub
+    `;
+
+    const subjSummaryRes = await pool.query(subjSummaryQuery, [studentId]);
+
+    const combinedScores = [
+      ...objectiveRes.rows.map(r => ({ ...r, exam_type: 'objective' })),
+      ...subjectiveRes.rows.map(r => ({ ...r, exam_type: 'subjective' }))
+    ];
+
+    res.json({
+      student_summary: {
+        objective_avg: Math.round(objSummaryRes.rows[0]?.objective_avg || 0),
+        subjective_avg: Math.round(subjSummaryRes.rows[0]?.subjective_avg || 0),
+        overall_avg: Math.round(
+          ((objSummaryRes.rows[0]?.objective_avg || 0) + (subjSummaryRes.rows[0]?.subjective_avg || 0)) / 2
+        )
+      },
+      exam_scores: combinedScores
+    });
+
+  } catch (err) {
+    console.error("Student analytics with subjective error:", err.message);
+    res.status(500).json({ error: "Failed to fetch student analytics" });
+  }
+};

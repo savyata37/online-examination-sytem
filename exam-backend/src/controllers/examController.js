@@ -1,35 +1,99 @@
 
 const pool = require("../config/db");
 
-/* ---------------- CREATE EXAM ---------------- */
+// /* ---------------- CREATE EXAM ---------------- */
+// exports.createExam = async (req, res) => {
+//   try {
+//     const { title, description, duration, subject_id, start_time, end_time, status } = req.body;
+
+//     const result = await pool.query(
+//       `
+//       INSERT INTO exams (title, description, duration, subject_id, created_by, start_time, end_time, status)
+//       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+//       RETURNING *
+//       `,
+//       [
+//         title,
+//         description || "",
+//         duration,
+//         subject_id,
+//         req.user.id,
+//         start_time || null,
+//         end_time || null,
+//         status || "upcoming",
+//       ]
+//     );
+
+//     res.status(201).json(result.rows[0]);
+//   } catch (err) {
+//     console.error("createExam error:", err);
+//     res.status(500).json({ message: "Failed to create exam" });
+//   }
+// };
+
 exports.createExam = async (req, res) => {
   try {
-    const { title, description, duration, subject_id, start_time, end_time, status } = req.body;
+    let {
+      title,
+      description,
+      duration,
+      subject_id,
+      start_time,
+      end_time,
+      status,
+      exam_type,
+    } = req.body;
+
+    // REQUIRED FIELDS
+    if (!title || !duration || !subject_id) {
+      return res
+        .status(400)
+        .json({ message: "Title, duration, and subject are required" });
+    }
+
+    // VALIDATE exam_type
+    const validExamTypes = ["objective", "subjective"];
+    if (typeof exam_type !== "string" || !validExamTypes.includes(exam_type.trim().toLowerCase())) {
+      exam_type = "objective"; // default
+    } else {
+      exam_type = exam_type.trim().toLowerCase();
+    }
+
+    console.log("Saving exam_type to DB:", exam_type); // ✅ Debug
+
+    // VALIDATE STATUS
+    const validStatuses = ["upcoming", "ongoing", "completed"];
+    if (typeof status !== "string" || !validStatuses.includes(status.trim().toLowerCase())) {
+      status = "upcoming";
+    } else {
+      status = status.trim().toLowerCase();
+    }
 
     const result = await pool.query(
-      `
-      INSERT INTO exams (title, description, duration, subject_id, created_by, start_time, end_time, status)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-      RETURNING *
-      `,
+      `INSERT INTO exams
+       (title, description, exam_type, duration, subject_id, created_by, start_time, end_time, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       RETURNING *`,
       [
         title,
         description || "",
+        exam_type,
         duration,
         subject_id,
         req.user.id,
         start_time || null,
         end_time || null,
-        status || "upcoming",
+        status,
       ]
     );
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error("createExam error:", err);
+    console.error("Create exam error:", err);
     res.status(500).json({ message: "Failed to create exam" });
   }
 };
+
 
 /* ---------------- GET ALL EXAMS ---------------- */
 exports.getAllExams = async (req, res) => {

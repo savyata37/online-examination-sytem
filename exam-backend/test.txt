@@ -224,6 +224,12 @@ SELECT * FROM results;
 
 
 
+"id"
+"student_id"
+"examid"
+"violation_type"
+"details"
+"created_at"
 
 
 
@@ -253,6 +259,7 @@ exams table
 "start_time"
 "end_time"
 "status"
+"exam_type"
 
 
 users table
@@ -293,13 +300,17 @@ exam_questions table
 "questionid"
 
 proctoring_violations table
+
 "id"
 "student_id"
-"examid"
+"exam_id"
 "violation_type"
 "details"
-"created_at"
-
+"detected_at"
+"severity"
+"is_flagged"
+"resolved"
+"result_id"
 
 
 student_answers table
@@ -310,3 +321,42 @@ student_answers table
 "questionid"
 "selected_option"
 "created_at"
+
+
+subjective_answers table
+
+"answerid"
+"examid"
+"subjectiveid"
+"student_id"
+"file_url"
+"submitted_at"
+"marks_obtained"
+"feedback"
+
+subjective_answers table
+"answerid"
+"examid"
+"subjectiveid"
+"student_id"
+"questionid"
+"file_url"
+"submitted_at"
+"marks_obtained"
+"feedback"
+
+
+subjective_question_bank table
+  subjectiveid
+  subject_id 
+  question
+  marks
+  created_by
+  created_at
+
+exam_subjective_questions table
+"id"
+"examid"
+"subjectiveid"
+
+

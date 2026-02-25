@@ -18,7 +18,9 @@ const {
   getAllSubjects,
   removeAdminProfilePic,
   getAdminProfile,
-  updateAdminProfile
+  updateAdminProfile,
+  getExamAnalyticsWithSubjective,
+  getStudentAnalyticsWithSubjective
 } = require("../controllers/adminController");
 
 // ------------------ File upload config ------------------
@@ -44,6 +46,9 @@ router.get("/student-analytics", auth(["admin"]), getStudentAnalytics);
 router.get("/exam-analytics", auth(["admin"]), getExamAnalytics);
 router.get("/subject-analytics", auth(["admin"]), getSubjectAnalytics);
 
+// ANALYTICS WITH SUBJECTIVE GRADES
+router.get("/exam-analytics-with-subjective", auth(["admin"]), getExamAnalyticsWithSubjective);
+router.get("/student-analytics-with-subjective", auth(["admin"]), getStudentAnalyticsWithSubjective);
 
 // router.get("/profile", auth(["admin"]), getAdminProfile);
 // router.put("/profile", auth(["admin"]), updateAdminProfile);
